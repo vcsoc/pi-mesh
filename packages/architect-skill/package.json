@@ -1,0 +1,10 @@
+{
+  "name": "pi-skill-architect",
+  "version": "0.1.0",
+  "description": "On-demand architect mode skill for solution design, system critique, and implementation planning.",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "pi": {
+    "skills": ["./skills"]
+  }
+}

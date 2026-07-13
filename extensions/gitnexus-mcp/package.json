@@ -1,0 +1,10 @@
+{
+  "name": "gitnexus-mcp-extension",
+  "private": true,
+  "dependencies": {
+    "typebox": "^1.0.46"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

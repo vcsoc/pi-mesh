@@ -1,0 +1,14 @@
+{
+  "$schema": "../schema/agent-config.schema.json",
+  "id": "senior-code-reviewer",
+  "displayName": "Senior Code Reviewer",
+  "role": "Project-agnostic quality gate across specifications, architecture, correctness, security, maintainability, accessibility, testing, and documentation as scoped by the orchestrator.",
+  "provider": "openai-codex",
+  "model": "gpt-5.6-sol",
+  "thinking": "high",
+  "tools": ["read", "bash", "grep", "find", "ls"],
+  "sessionDir": ".pi/sessions/agents",
+  "requiredFor": ["all completed implementation work", "quality gate", "pre-merge review"],
+  "handoffInputs": ["orchestrator task packet", "active project instructions", "changed files", "implementation summary", "test results", "acceptance criteria", "specification references"],
+  "handoffOutputs": ["review scorecard", "approval or rejection", "required fixes", "missing tests"]
+}

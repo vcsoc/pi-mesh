@@ -1,0 +1,9 @@
+{
+  "$schema": "./schema/agent-defaults.schema.json",
+  "description": "Shared agent defaults. Null provider/model means inherit the provider/model selected for the current Pi session.",
+  "provider": null,
+  "model": null,
+  "thinking": null,
+  "tools": null,
+  "sessionDir": ".pi/sessions/agents"
+}
