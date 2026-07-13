@@ -1,7 +1,8 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { existsSync } from "node:fs";
-import { cp, mkdir, rm } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 type WorkMode = "direct" | "auto" | "team";
@@ -30,6 +31,10 @@ Choose whether the current Pi assistant works directly or coordinates project su
   Create the project-agnostic agents/ structure and launcher scripts in the current project, or in the optional path.
   Existing agent infrastructure is never overwritten unless --force is supplied.
 
+/work inspect [--report]
+  Inspect project agents, skills, extensions, and tools, then assess configuration efficiency.
+  --report also writes a standalone work-inspect-report.html with light/dark themes.
+
 /work direct [duration] <request>
   The current assistant completes the request itself. Sub-agents are prohibited.
 
@@ -46,21 +51,39 @@ A deadline limits execution time; it cannot guarantee that the requested work wi
 
 ## Examples
 
+### Inspect project configuration
+
+/work inspect
+  Review the current project's agents, sub-agents, skills, extensions, active tools, efficiency score, and recommended improvements.
+
+/work inspect --report
+  Run the same inspection and write a standalone work-inspect-report.html with embedded CSS/JavaScript and a light/dark theme toggle.
+
+### Scaffold agent infrastructure
+
+/work scaffold
+  Add the default agents/ structure and launcher scripts to the current project.
+
+/work scaffold C:\\projects\\new-app
+  Scaffold a specific project directory.
+
+/work scaffold --force
+  Replace existing agent infrastructure in the current project. This is destructive and must be explicit.
+
+### Control execution
+
 /work direct 30s Fix this typo and run the smallest relevant check
 /work direct unlimited Refactor this module and verify it
 /work auto 5m Diagnose and fix the failing integration test
 /work team 15m Implement and independently test this feature
 /work team unlimited Complete the full delivery workflow
-/work scaffold
-/work scaffold C:\\projects\\new-app
-/work scaffold --force
 
-## Numeric shortcuts
+## Work shortcuts
 
-/1 <request>  = direct, 30 seconds
-/2 <request>  = direct, 2 minutes
-/3 <request>  = auto, 10 minutes
-/4 <request>  = team, unlimited
+/w1 <request>  = direct, 30 seconds
+/w2 <request>  = direct, 2 minutes
+/w3 <request>  = auto, 10 minutes
+/w4 <request>  = team, unlimited
 
 ## Defaults and safety
 
@@ -114,6 +137,116 @@ const policyInstructions = (policy: WorkPolicy): string => {
 
 const showHelp = (pi: ExtensionAPI) => {
   pi.sendMessage({ customType: "work-controller-help", content: HELP, display: true }, { triggerTurn: false });
+};
+
+type InspectItem = { name: string; path: string; details?: string };
+type InspectResult = {
+  generatedAt: string;
+  project: string;
+  score: number;
+  verdict: string;
+  agents: InspectItem[];
+  skills: InspectItem[];
+  extensions: InspectItem[];
+  tools: InspectItem[];
+  findings: Array<{ level: "critical" | "warning" | "good"; text: string }>;
+};
+
+const listDirectories = async (root: string): Promise<string[]> => {
+  if (!existsSync(root)) return [];
+  return (await readdir(root, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+};
+
+const readJson = async (path: string): Promise<Record<string, unknown> | undefined> => {
+  try { return JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>; } catch { return undefined; }
+};
+
+const inspectProject = async (pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<InspectResult> => {
+  const agentsRoot = join(ctx.cwd, "agents");
+  const agentNames = await listDirectories(agentsRoot);
+  const agents: InspectItem[] = [];
+  for (const name of agentNames) {
+    const root = join(agentsRoot, name);
+    const config = await readJson(join(root, "agent.config.json"));
+    const details = config
+      ? `provider=${String(config.provider ?? "inherit")}, model=${String(config.model ?? "inherit")}, tools=${Array.isArray(config.tools) ? config.tools.join(", ") : "inherit"}`
+      : "missing agent.config.json";
+    agents.push({ name, path: relative(ctx.cwd, root), details });
+  }
+
+  const loadedSkills = ((ctx.getSystemPromptOptions().skills ?? []) as Array<Record<string, unknown>>).map((skill) => ({
+    name: String(skill.name ?? "unnamed"),
+    path: String(skill.path ?? skill.source ?? "loaded resource"),
+    details: typeof skill.description === "string" ? skill.description : undefined,
+  }));
+  const projectSkillRoots = [join(ctx.cwd, ".pi", "skills"), join(ctx.cwd, ".agents", "skills")];
+  const discoveredSkills: InspectItem[] = [];
+  for (const root of projectSkillRoots) {
+    for (const name of await listDirectories(root)) discoveredSkills.push({ name, path: relative(ctx.cwd, join(root, name)), details: "project-local" });
+  }
+  const skills = [...loadedSkills, ...discoveredSkills].filter((item, index, all) => all.findIndex((other) => other.name === item.name && other.path === item.path) === index);
+
+  const extensionRoots = [join(ctx.cwd, ".pi", "extensions"), join(homedir(), ".pi", "agent", "extensions")];
+  const extensions: InspectItem[] = [];
+  for (const root of extensionRoots) {
+    if (!existsSync(root)) continue;
+    for (const entry of await readdir(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() && !/\.[cm]?[jt]s$/.test(entry.name)) continue;
+      extensions.push({ name: entry.name.replace(/\.[^.]+$/, ""), path: join(root, entry.name), details: root.startsWith(ctx.cwd) ? "project-local" : "global" });
+    }
+  }
+
+  const tools: InspectItem[] = pi.getAllTools().map((tool) => ({
+    name: tool.name,
+    path: String(tool.sourceInfo?.path ?? tool.sourceInfo?.source ?? "unknown"),
+    details: pi.getActiveTools().includes(tool.name) ? "active" : "inactive",
+  }));
+  const findings: InspectResult["findings"] = [];
+  const hasLauncher = existsSync(join(ctx.cwd, "scripts", "run-agent.mjs"));
+  const hasRegistry = existsSync(join(agentsRoot, "agent-registry.json"));
+  const configuredAgents = agents.filter((agent) => !agent.details?.startsWith("missing")).length;
+  if (!agentNames.length) findings.push({ level: "warning", text: "No project sub-agent infrastructure is configured; auto/team modes cannot delegate." });
+  else {
+    if (!hasLauncher) findings.push({ level: "critical", text: "Agents exist but scripts/run-agent.mjs is missing, so sub-agents cannot be launched consistently." });
+    if (!hasRegistry) findings.push({ level: "warning", text: "agents/agent-registry.json is missing; orchestration order and role selection are not explicit." });
+    if (configuredAgents !== agents.length) findings.push({ level: "warning", text: `${agents.length - configuredAgents} agent(s) lack a readable agent.config.json.` });
+    if (hasLauncher && hasRegistry && configuredAgents === agents.length) findings.push({ level: "good", text: "Agent infrastructure has a launcher, registry, and readable role configs." });
+  }
+  const activeTools = tools.filter((tool) => tool.details === "active").length;
+  if (activeTools > 20) findings.push({ level: "warning", text: `${activeTools} tools are active. Reduce the default tool surface to improve selection accuracy and prompt efficiency.` });
+  else findings.push({ level: "good", text: `${activeTools} active tools is a manageable tool surface.` });
+  if (skills.length > 25) findings.push({ level: "warning", text: `${skills.length} skills are loaded/discovered. Remove duplicates and keep specialized workflows on demand.` });
+  else findings.push({ level: "good", text: `${skills.length} skills are available without excessive catalog size.` });
+  const duplicateTools = tools.filter((tool, index, all) => all.findIndex((other) => other.name === tool.name) !== index);
+  if (duplicateTools.length) findings.push({ level: "critical", text: `Duplicate tool names detected: ${[...new Set(duplicateTools.map((tool) => tool.name))].join(", ")}.` });
+  const score = Math.max(0, 100 - findings.reduce((sum, finding) => sum + (finding.level === "critical" ? 25 : finding.level === "warning" ? 8 : 0), 0));
+  return { generatedAt: new Date().toISOString(), project: ctx.cwd, score, verdict: score >= 90 ? "agent-efficient" : score >= 70 ? "usable with improvements" : "needs critical improvement", agents, skills, extensions, tools, findings };
+};
+
+const markdownReport = (result: InspectResult): string => {
+  const section = (title: string, items: InspectItem[]) => `## ${title} (${items.length})\n${items.length ? items.map((item) => `- **${item.name}** — ${item.details ?? "configured"} \`${item.path}\``).join("\n") : "- None found"}`;
+  return `# /work inspect\n\n**Project:** \`${result.project}\`  \n**Efficiency:** ${result.score}/100 — **${result.verdict}**\n\n## Findings\n${result.findings.map((finding) => `- **${finding.level.toUpperCase()}** — ${finding.text}`).join("\n")}\n\n${section("Agents / sub-agents", result.agents)}\n\n${section("Skills", result.skills)}\n\n${section("Extensions", result.extensions)}\n\n${section("Tools", result.tools)}`;
+};
+
+const htmlReport = (result: InspectResult): string => {
+  const data = JSON.stringify(result).replace(/</g, "\\u003c");
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Work Inspect Report</title><style>:root{color-scheme:light dark;--bg:#f7f7f5;--panel:#fff;--text:#171717;--muted:#666;--line:#ddd;--accent:#2563eb}body.dark{--bg:#111;--panel:#191919;--text:#eee;--muted:#aaa;--line:#333;--accent:#60a5fa}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,sans-serif}main{max-width:1040px;margin:auto;padding:32px 20px}header{display:flex;justify-content:space-between;gap:20px;align-items:start}.score{font-size:2.5rem;font-weight:700}button{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:24px 0}.card,section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}section{margin:12px 0}h1,h2{margin:0 0 10px}h2{font-size:1rem}.muted,small{color:var(--muted)}ul{margin:0;padding-left:20px}.critical{color:#dc2626}.warning{color:#d97706}.good{color:#16a34a}details{border-top:1px solid var(--line);padding:9px 0}details:first-of-type{border:0}code{font-size:12px;overflow-wrap:anywhere}</style></head><body><main><header><div><h1>Project configuration</h1><div class="muted" id="project"></div></div><button id="theme">Toggle theme</button></header><div class="grid" id="summary"></div><section><h2>Findings</h2><ul id="findings"></ul></section><div id="sections"></div></main><script>const d=${data};const q=s=>document.querySelector(s),esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));q('#project').textContent=d.project+' · '+d.generatedAt;q('#summary').innerHTML='<div class="card"><div class="score">'+d.score+'</div><div>'+esc(d.verdict)+'</div></div>'+['agents','skills','extensions','tools'].map(k=>'<div class="card"><div class="score">'+d[k].length+'</div><div>'+k+'</div></div>').join('');q('#findings').innerHTML=d.findings.map(x=>'<li class="'+x.level+'"><b>'+x.level.toUpperCase()+'</b> — '+esc(x.text)+'</li>').join('');q('#sections').innerHTML=['agents','skills','extensions','tools'].map(k=>'<section><h2>'+k[0].toUpperCase()+k.slice(1)+' ('+d[k].length+')</h2>'+d[k].map(x=>'<details><summary>'+esc(x.name)+' <small>'+esc(x.details||'')+'</small></summary><code>'+esc(x.path)+'</code></details>').join('')+'</section>').join('');const saved=localStorage.getItem('work-theme');if(saved==='dark')document.body.classList.add('dark');q('#theme').onclick=()=>{document.body.classList.toggle('dark');localStorage.setItem('work-theme',document.body.classList.contains('dark')?'dark':'light')};</script></body></html>`;
+};
+
+const inspect = async (args: string, pi: ExtensionAPI, ctx: ExtensionCommandContext) => {
+  const tokens = args.trim().split(/\s+/).filter(Boolean);
+  if (tokens.some((token) => token !== "--report")) {
+    ctx.ui.notify("Usage: /work inspect [--report]", "error");
+    return;
+  }
+  const result = await inspectProject(pi, ctx);
+  let content = markdownReport(result);
+  if (tokens.includes("--report")) {
+    const output = join(ctx.cwd, "work-inspect-report.html");
+    await writeFile(output, htmlReport(result), "utf8");
+    content += `\n\nHTML report: \`${output}\``;
+  }
+  pi.sendMessage({ customType: "work-controller-inspect", content, display: true }, { triggerTurn: false });
 };
 
 const scaffold = async (args: string, ctx: ExtensionCommandContext) => {
@@ -173,7 +306,7 @@ export default function workController(pi: ExtensionAPI) {
   pi.registerCommand("work", {
     description: "Control direct/team execution and time budgets; use /work help",
     getArgumentCompletions: (prefix) => {
-      const values = ["help", "scaffold", "direct", "auto", "team"];
+      const values = ["help", "inspect", "inspect --report", "scaffold", "direct", "auto", "team"];
       const matches = values.filter((value) => value.startsWith(prefix.trim().toLowerCase()));
       return matches.length ? matches.map((value) => ({ value, label: value })) : null;
     },
@@ -188,15 +321,19 @@ export default function workController(pi: ExtensionAPI) {
         await scaffold(rest.join(" "), ctx);
         return;
       }
+      if (command.toLowerCase() === "inspect") {
+        await inspect(rest.join(" "), pi, ctx);
+        return;
+      }
       await startWork(trimmed, ctx);
     },
   });
 
   const shortcuts: Array<[string, WorkMode, string, number | undefined]> = [
-    ["1", "direct", "30s", 30_000],
-    ["2", "direct", "2m", 120_000],
-    ["3", "auto", "10m", 600_000],
-    ["4", "team", "unlimited", undefined],
+    ["w1", "direct", "30s", 30_000],
+    ["w2", "direct", "2m", 120_000],
+    ["w3", "auto", "10m", 600_000],
+    ["w4", "team", "unlimited", undefined],
   ];
   for (const [name, mode, durationLabel, durationMs] of shortcuts) {
     pi.registerCommand(name, {
