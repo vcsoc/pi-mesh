@@ -4,6 +4,7 @@ agent/trust.json
 agent/sessions/
 history/
 .pi/
+/agent-mesh/
 agent/extensions
 agent/skills
 agent/themes
