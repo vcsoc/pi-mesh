@@ -1,8 +1,10 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 
 type WorkMode = "direct" | "auto" | "team";
@@ -34,6 +36,19 @@ Choose whether the current Pi assistant works directly or coordinates project su
 /work inspect [--report]
   Inspect project agents, skills, extensions, and tools, then assess configuration efficiency.
   --report also writes a standalone work-inspect-report.html with light/dark themes.
+
+/work agents
+  List project sub-agents available for direct conversation.
+
+/work agent <agent-id> <request or question>
+  Talk directly to a persistent sub-agent. The same conversation is resumed for later requests and questions.
+  If the agent is busy, the message is queued as a follow-up.
+
+/work agent <agent-id> --steer <message>
+  Interrupt a busy sub-agent at its next safe turn with a question or changed instruction.
+
+/work agent <agent-id> --status | --abort | --new
+  Show its current/latest work, abort active work, or start a fresh conversation.
 
 /work direct [duration] <request>
   The current assistant completes the request itself. Sub-agents are prohibited.
@@ -70,6 +85,18 @@ A deadline limits execution time; it cannot guarantee that the requested work wi
 /work scaffold --force
   Replace existing agent infrastructure in the current project. This is destructive and must be explicit.
 
+### Talk directly to sub-agents
+
+/work agents
+/work agent senior-architect Review the current authentication design
+/work agent senior-architect What tradeoffs led to that recommendation?
+/work agent senior-backend-developer --steer Before continuing, check whether this breaks migrations
+/work agent senior-backend-developer --status
+/work agent senior-backend-developer --abort
+/work agent senior-backend-developer --new
+
+Direct sub-agent conversations use isolated persistent Pi sessions under .pi/sessions/agents/<agent-id>. Their completed replies appear in the parent transcript.
+
 ### Control execution
 
 /work direct 30s Fix this typo and run the smallest relevant check
@@ -90,6 +117,8 @@ A deadline limits execution time; it cannot guarantee that the requested work wi
 - Ordinary prompts that do not use /work follow the active project's instructions.
 - /work without an explicit mode defaults to direct and unlimited.
 - Existing agents are always used as-is; use scaffold only when a project has no agent structure.
+- Direct agent messages use the selected agent's existing config and AGENTS.md role prompt.
+- Messages sent while an agent is busy queue as follow-ups unless --steer is explicit.
 - scaffold refuses partial or destructive overwrites unless --force is explicit.
 - direct mode does not bypass security constraints or explicit production/PR delivery gates.
 - When a deadline expires, Pi aborts active work and must report completed work, evidence, and unfinished items honestly.`;
@@ -271,6 +300,60 @@ const inspect = async (args: string, pi: ExtensionAPI, ctx: ExtensionCommandCont
   pi.sendMessage({ customType: "work-controller-inspect", content, display: true }, { triggerTurn: false });
 };
 
+type ProjectAgent = {
+  id: string;
+  displayName: string;
+  config: Record<string, unknown>;
+  rolePrompt: string;
+};
+
+type AgentRuntime = {
+  agent: ProjectAgent;
+  child: ChildProcessWithoutNullStreams;
+  running: boolean;
+  latestText: string;
+  stderr: string;
+  startedAt: number;
+  intentionallyStopped: boolean;
+};
+
+const discoverProjectAgents = async (cwd: string): Promise<ProjectAgent[]> => {
+  const root = join(cwd, "agents");
+  const agents: ProjectAgent[] = [];
+  for (const id of await listDirectories(root)) {
+    const config = await readJson(join(root, id, "agent.config.json"));
+    const promptPath = join(root, id, "AGENTS.md");
+    if (!config || !existsSync(promptPath)) continue;
+    agents.push({
+      id,
+      displayName: String(config.displayName ?? id),
+      config,
+      rolePrompt: await readFile(promptPath, "utf8"),
+    });
+  }
+  return agents;
+};
+
+const assistantText = (message: Record<string, unknown> | undefined): string => {
+  if (!message || message.role !== "assistant" || !Array.isArray(message.content)) return "";
+  return message.content
+    .filter((part): part is Record<string, unknown> => Boolean(part && typeof part === "object"))
+    .filter((part) => part.type === "text" && typeof part.text === "string")
+    .map((part) => String(part.text))
+    .join("\n")
+    .trim();
+};
+
+const piInvocation = (args: string[]): { command: string; args: string[] } => {
+  const globalCli = process.env.APPDATA
+    ? resolve(process.env.APPDATA, "npm", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js")
+    : undefined;
+  if (process.platform === "win32" && globalCli && existsSync(globalCli)) {
+    return { command: process.execPath, args: [globalCli, ...args] };
+  }
+  return { command: "pi", args };
+};
+
 const scaffold = async (args: string, ctx: ExtensionCommandContext) => {
   const tokens = args.trim().split(/\s+/).filter(Boolean);
   const force = tokens.includes("--force");
@@ -307,6 +390,7 @@ export default function workController(pi: ExtensionAPI) {
   let pendingPolicy: WorkPolicy | undefined;
   let activePolicy: WorkPolicy | undefined;
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const agentRuntimes = new Map<string, AgentRuntime>();
 
   const clearDeadline = () => {
     if (deadlineTimer) clearTimeout(deadlineTimer);
@@ -325,10 +409,158 @@ export default function workController(pi: ExtensionAPI) {
     pi.sendUserMessage(parsed.task);
   };
 
+  const stopAgent = (id: string) => {
+    const runtime = agentRuntimes.get(id);
+    if (!runtime) return false;
+    runtime.intentionallyStopped = true;
+    if (!runtime.child.killed) runtime.child.kill("SIGTERM");
+    agentRuntimes.delete(id);
+    return true;
+  };
+
+  const sendRpc = (runtime: AgentRuntime, command: Record<string, unknown>) => {
+    if (runtime.child.exitCode !== null || !runtime.child.stdin.writable) throw new Error(`Sub-agent '${runtime.agent.id}' is not available.`);
+    runtime.child.stdin.write(`${JSON.stringify(command)}\n`);
+  };
+
+  const startAgentRuntime = async (agent: ProjectAgent, ctx: ExtensionCommandContext, fresh = false): Promise<AgentRuntime> => {
+    const existing = agentRuntimes.get(agent.id);
+    if (existing && existing.child.exitCode === null) return existing;
+
+    const sessionDir = join(ctx.cwd, ".pi", "sessions", "agents", agent.id);
+    await mkdir(sessionDir, { recursive: true });
+    const hasSessions = (await readdir(sessionDir)).some((name) => name.endsWith(".jsonl"));
+    const args = ["--mode", "rpc", "--session-dir", sessionDir, "--name", `agent:${agent.id}`, "--append-system-prompt", agent.rolePrompt];
+    if (!fresh && hasSessions) args.push("--continue");
+    const configuredProvider = typeof agent.config.provider === "string" && agent.config.provider ? agent.config.provider : undefined;
+    const configuredModel = typeof agent.config.model === "string" && agent.config.model ? agent.config.model : undefined;
+    const provider = configuredProvider ?? ctx.model?.provider;
+    const model = configuredModel ?? (!configuredProvider || configuredProvider === ctx.model?.provider ? ctx.model?.id : undefined);
+    const thinking = typeof agent.config.thinking === "string" && agent.config.thinking ? agent.config.thinking : pi.getThinkingLevel();
+    if (provider) args.push("--provider", provider);
+    if (model) args.push("--model", model);
+    if (thinking) args.push("--thinking", thinking);
+    if (Array.isArray(agent.config.tools) && agent.config.tools.length) args.push("--tools", agent.config.tools.map(String).join(","));
+
+    const invocation = piInvocation(args);
+    const child = spawn(invocation.command, invocation.args, { cwd: ctx.cwd, shell: false, stdio: ["pipe", "pipe", "pipe"] });
+    const runtime: AgentRuntime = { agent, child, running: false, latestText: "", stderr: "", startedAt: Date.now(), intentionallyStopped: false };
+    agentRuntimes.set(agent.id, runtime);
+
+    const decoder = new StringDecoder("utf8");
+    let buffer = "";
+    const processLine = (line: string) => {
+      if (!line.trim() || runtime.intentionallyStopped) return;
+      let event: Record<string, unknown>;
+      try { event = JSON.parse(line) as Record<string, unknown>; } catch { return; }
+      if (event.type === "agent_start") {
+        runtime.running = true;
+        runtime.latestText = "";
+        ctx.ui.setStatus(`work-agent:${agent.id}`, `${agent.id} · working`);
+      } else if (event.type === "message_end") {
+        const text = assistantText(event.message as Record<string, unknown> | undefined);
+        if (text) runtime.latestText = text;
+      } else if (event.type === "agent_settled") {
+        runtime.running = false;
+        ctx.ui.setStatus(`work-agent:${agent.id}`, undefined);
+        pi.sendMessage({
+          customType: "work-agent-reply",
+          content: `## ${agent.displayName}\n\n${runtime.latestText || "(The sub-agent completed without a text reply.)"}`,
+          display: true,
+          details: { agent: agent.id, startedAt: runtime.startedAt },
+        }, { triggerTurn: false });
+      } else if (
+        event.type === "extension_ui_request"
+        && typeof event.id === "string"
+        && ["select", "confirm", "input", "editor"].includes(String(event.method))
+      ) {
+        sendRpc(runtime, { type: "extension_ui_response", id: event.id, cancelled: true });
+      }
+    };
+    child.stdout.on("data", (chunk) => {
+      buffer += decoder.write(chunk);
+      while (true) {
+        const newline = buffer.indexOf("\n");
+        if (newline < 0) break;
+        let line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        processLine(line);
+      }
+    });
+    child.stdout.on("end", () => {
+      buffer += decoder.end();
+      if (buffer) processLine(buffer.endsWith("\r") ? buffer.slice(0, -1) : buffer);
+    });
+    child.stderr.on("data", (chunk) => { runtime.stderr = `${runtime.stderr}${chunk.toString()}`.slice(-8000); });
+    child.on("error", (error) => { runtime.stderr = error.message; });
+    child.on("close", (code) => {
+      runtime.running = false;
+      if (agentRuntimes.get(agent.id) === runtime) agentRuntimes.delete(agent.id);
+      if (!runtime.intentionallyStopped) {
+        ctx.ui.setStatus(`work-agent:${agent.id}`, undefined);
+        if (code !== 0) ctx.ui.notify(`Sub-agent '${agent.id}' exited (${code ?? "unknown"}). ${runtime.stderr.trim()}`, "error");
+      }
+    });
+    return runtime;
+  };
+
+  const handleAgentCommand = async (args: string, ctx: ExtensionCommandContext) => {
+    if (!ctx.isProjectTrusted()) {
+      ctx.ui.notify("Direct project sub-agent access is disabled until this project is trusted.", "error");
+      return;
+    }
+    const trimmed = args.trim();
+    const [id, ...parts] = trimmed.split(/\s+/);
+    if (!id) {
+      ctx.ui.notify("Usage: /work agent <agent-id> <message|--status|--abort|--new|--steer message>", "error");
+      return;
+    }
+    const agents = await discoverProjectAgents(ctx.cwd);
+    const agent = agents.find((candidate) => candidate.id === id);
+    if (!agent) {
+      ctx.ui.notify(`Unknown agent '${id}'. Available: ${agents.map((candidate) => candidate.id).join(", ") || "none"}`, "error");
+      return;
+    }
+    const message = parts.join(" ").trim();
+    if (message === "--abort") {
+      const runtime = agentRuntimes.get(id);
+      if (!runtime?.running) { ctx.ui.notify(`Sub-agent '${id}' is not working.`, "info"); return; }
+      sendRpc(runtime, { type: "abort" });
+      ctx.ui.notify(`Abort requested for '${id}'.`, "warning");
+      return;
+    }
+    if (message === "--status" || !message) {
+      const runtime = agentRuntimes.get(id);
+      const state = runtime?.running ? "working" : runtime ? "idle" : "not started in this runtime";
+      pi.sendMessage({ customType: "work-agent-status", content: `## ${agent.displayName} — ${state}\n\n${runtime?.latestText || "No reply is cached. Send a message to resume its persistent session."}`, display: true }, { triggerTurn: false });
+      return;
+    }
+    if (message === "--new") {
+      const runtime = agentRuntimes.get(id);
+      if (runtime?.running) {
+        ctx.ui.notify(`Sub-agent '${id}' is working. Abort it before starting a fresh conversation.`, "error");
+        return;
+      }
+      if (runtime) sendRpc(runtime, { type: "new_session" });
+      else await startAgentRuntime(agent, ctx, true);
+      ctx.ui.notify(`Started a fresh conversation with '${id}'.`, "info");
+      return;
+    }
+
+    const steer = message.startsWith("--steer ");
+    const text = steer ? message.slice("--steer ".length).trim() : message;
+    if (!text) { ctx.ui.notify("A message is required after --steer.", "error"); return; }
+    const runtime = await startAgentRuntime(agent, ctx);
+    if (runtime.running) sendRpc(runtime, { type: steer ? "steer" : "follow_up", message: text });
+    else sendRpc(runtime, { type: "prompt", message: text });
+    ctx.ui.notify(`${runtime.running ? steer ? "Steered" : "Queued for" : "Sent to"} '${id}'.`, "info");
+  };
+
   pi.registerCommand("work", {
-    description: "Control direct/team execution and time budgets; use /work help",
+    description: "Control execution or talk directly to project sub-agents; use /work help",
     getArgumentCompletions: (prefix) => {
-      const values = ["help", "inspect", "inspect --report", "scaffold", "direct", "auto", "team"];
+      const values = ["help", "inspect", "inspect --report", "scaffold", "agents", "agent", "direct", "auto", "team"];
       const matches = values.filter((value) => value.startsWith(prefix.trim().toLowerCase()));
       return matches.length ? matches.map((value) => ({ value, label: value })) : null;
     },
@@ -345,6 +577,22 @@ export default function workController(pi: ExtensionAPI) {
       }
       if (command.toLowerCase() === "inspect") {
         await inspect(rest.join(" "), pi, ctx);
+        return;
+      }
+      if (command.toLowerCase() === "agents") {
+        if (!ctx.isProjectTrusted()) {
+          ctx.ui.notify("Project sub-agent discovery is disabled until this project is trusted.", "error");
+          return;
+        }
+        const agents = await discoverProjectAgents(ctx.cwd);
+        const content = agents.length
+          ? `# Project sub-agents\n\n${agents.map((agent) => `- **${agent.id}** — ${agent.displayName}${agentRuntimes.get(agent.id)?.running ? " *(working)*" : ""}`).join("\n")}\n\nUse \`/work agent <agent-id> <message>\` to talk directly.`
+          : "# Project sub-agents\n\nNone found. Use `/work scaffold` to create the default infrastructure.";
+        pi.sendMessage({ customType: "work-agent-list", content, display: true }, { triggerTurn: false });
+        return;
+      }
+      if (command.toLowerCase() === "agent") {
+        await handleAgentCommand(rest.join(" "), ctx);
         return;
       }
       await startWork(trimmed, ctx);
@@ -386,5 +634,8 @@ export default function workController(pi: ExtensionAPI) {
     ctx.ui.setStatus("work-controller", undefined);
   });
 
-  pi.on("session_shutdown", () => clearDeadline());
+  pi.on("session_shutdown", () => {
+    clearDeadline();
+    for (const id of [...agentRuntimes.keys()]) stopAgent(id);
+  });
 }
