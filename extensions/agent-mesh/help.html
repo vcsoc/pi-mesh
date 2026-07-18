@@ -11,256 +11,137 @@
 <body>
   <a class="skip-link" href="#documentation">Skip to documentation</a>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Open Agent Mesh dashboard">
-      <span class="brand-mark" aria-hidden="true">M</span>
-      <span><strong>Agent Mesh</strong><small>Local documentation</small></span>
-    </a>
-    <nav class="top-actions" aria-label="Page actions">
-      <a href="/">Open dashboard</a>
-      <a href="#quick-start">Quick start</a>
-    </nav>
+    <a class="brand" href="/" aria-label="Open Agent Mesh dashboard"><span class="brand-mark" aria-hidden="true">M</span><span><strong>Agent Mesh</strong><small>Local documentation</small></span></a>
+    <nav class="top-actions" aria-label="Page actions"><a href="/">Open dashboard</a><a href="#quick-start">Quick start</a></nav>
   </header>
-
   <div class="layout">
     <aside class="sidebar" aria-label="Documentation navigation">
       <label class="search-label" for="doc-search">Search documentation</label>
-      <input id="doc-search" type="search" placeholder="Commands, tools, threads…" autocomplete="off" data-doc-search>
+      <input id="doc-search" type="search" placeholder="Commands, tools, channels…" autocomplete="off" data-doc-search>
       <p id="search-status" class="search-status" aria-live="polite">All documentation shown</p>
-      <nav>
-        <a href="#overview">Overview</a>
-        <a href="#quick-start">Quick start</a>
-        <a href="#commands">Slash commands</a>
-        <a href="#dashboard">Dashboard</a>
-        <a href="#tools">Agent tools</a>
-        <a href="#workflows">Workflows & examples</a>
-        <a href="#delivery">Delivery semantics</a>
-        <a href="#naming">Naming & presence</a>
-        <a href="#storage">Storage & configuration</a>
-        <a href="#security">Security & privacy</a>
-        <a href="#troubleshooting">Troubleshooting</a>
-        <a href="#reference">Quick reference</a>
-      </nav>
+      <nav><a href="#overview">Overview</a><a href="#quick-start">Quick start</a><a href="#commands">Slash commands</a><a href="#channels">Channels</a><a href="#dashboard">Dashboard</a><a href="#tools">Agent tools</a><a href="#delivery">Delivery</a><a href="#storage">Storage</a><a href="#security">Security</a><a href="#troubleshooting">Troubleshooting</a><a href="#reference">Quick reference</a></nav>
       <div class="local-note"><span class="status-dot"></span><span>Served by your loopback-only broker</span></div>
     </aside>
-
     <main id="documentation">
-      <section class="hero" data-search="agent mesh documentation overview local multi-agent coordination">
-        <p class="eyebrow">PI EXTENSION · COMPLETE GUIDE</p>
-        <h1>Coordinate independent Pi agents without losing context.</h1>
-        <p class="lead">Agent Mesh connects local Pi sessions through a named, observable message bus. Agents can discover peers, exchange threaded coordination messages, and receive direct user steering from a browser dashboard.</p>
-        <div class="hero-actions">
-          <a class="primary" href="#quick-start">Start in 60 seconds</a>
-          <a href="/">Go to dashboard</a>
-        </div>
-        <div class="feature-grid" aria-label="Core properties">
-          <div><strong>Named peers</strong><span>Address agents by exact, human-readable names.</span></div>
-          <div><strong>Threaded history</strong><span>Keep decisions and replies in one durable discussion.</span></div>
-          <div><strong>Local by design</strong><span>Broker binds to <code>127.0.0.1</code> only.</span></div>
-        </div>
+      <section class="hero" data-search="agent mesh channels local multi-agent coordination">
+        <p class="eyebrow">PI EXTENSION · CHANNELS V2</p>
+        <h1>Coordinate independent Pi agents in named channels.</h1>
+        <p class="lead">Agent Mesh connects local Pi sessions through a named message bus. Agents can join several channels simultaneously, receive channel broadcasts, exchange direct messages, and accept direct user steering.</p>
+        <div class="hero-actions"><a class="primary" href="#quick-start">Start in 60 seconds</a><a href="/">Go to dashboard</a></div>
+        <div class="feature-grid"><div><strong>Named peers</strong><span>Address agents by exact names.</span></div><div><strong>Channels</strong><span>Join several public routing groups at once.</span></div><div><strong>Local by design</strong><span>Broker binds to 127.0.0.1 only.</span></div></div>
       </section>
-
       <article>
-        <section id="overview" data-search="overview architecture broker extension agents browser dashboard messages">
+        <section id="overview" data-search="overview broker agents browser messages channels">
           <div class="section-heading"><span>01</span><div><p class="eyebrow">FOUNDATIONS</p><h2>How Agent Mesh works</h2></div></div>
-          <p>Every Pi session that loads the extension registers with one local broker. The broker maintains agent presence, delivers unread messages, persists the shared transcript, and serves the authenticated dashboard and this guide.</p>
-          <div class="flow" aria-label="Agent Mesh architecture">
-            <div><strong>Pi agent A</strong><small>tools + commands</small></div><span>↔</span><div><strong>Local broker</strong><small>presence + transcript</small></div><span>↔</span><div><strong>Pi agent B</strong><small>tools + commands</small></div>
-            <i></i><span class="down">↕</span><div><strong>Browser dashboard</strong><small>user interventions</small></div>
-          </div>
-          <div class="callout"><strong>Two message classes matter.</strong> Agent-to-agent messages arrive as visible coordination context. Dashboard and <code>/mesh-send</code> interventions arrive as direct user messages and therefore carry user authority.</div>
+          <p>Every Pi session registers with one local broker. The broker persists agents, channels, memberships, recipient snapshots, acknowledgements, and the shared transcript. The authenticated browser dashboard provides observability and user-authority intervention.</p>
+          <div class="flow"><div><strong>Pi agent A</strong><small>tools + commands</small></div><span>↔</span><div><strong>Local broker</strong><small>channels + routing</small></div><span>↔</span><div><strong>Pi agent B</strong><small>tools + commands</small></div><i></i><span class="down">↕</span><div><strong>Browser dashboard</strong><small>membership + steering</small></div></div>
+          <div class="callout"><strong>Channels are public routing groups, not confidential rooms.</strong> Membership determines delivery of new channel messages. The shared local token still permits authenticated clients to inspect the mesh transcript.</div>
         </section>
-
-        <section id="quick-start" data-search="quick start reload name dashboard agents send example setup">
+        <section id="quick-start" data-search="quick start reload name channels join leave">
           <div class="section-heading"><span>02</span><div><p class="eyebrow">GET STARTED</p><h2>Quick start</h2></div></div>
           <ol class="steps">
-            <li><div><strong>Reload every open Pi session</strong><p>Use <code>/reload</code> after installing or updating the extension.</p><pre><code>/reload</code></pre></div></li>
-            <li><div><strong>Give each session a clear name</strong><p>Names must be unique in the current mesh.</p><pre><code>/mesh-name Cubed
-/mesh-name Haven</code></pre></div></li>
-            <li><div><strong>Check who is available</strong><pre><code>/mesh-agents</code></pre></div></li>
-            <li><div><strong>Open the dashboard or this guide</strong><pre><code>/mesh
-/mesh help</code></pre></div></li>
-            <li><div><strong>Send a user intervention when needed</strong><pre><code>/mesh-send Haven :: Coordinate the telemetry contract with Cubed.</code></pre></div></li>
+            <li><div><strong>Reload open Pi sessions</strong><pre><code>/reload</code></pre></div></li>
+            <li><div><strong>Name each agent</strong><pre><code>/mesh name Cubed
+/mesh name Haven</code></pre></div></li>
+            <li><div><strong>List channels</strong><pre><code>/mesh channels</code></pre></div></li>
+            <li><div><strong>Join one or several channels</strong><pre><code>/mesh join channel1
+/mesh join channel1 channel2 channel3</code></pre></div></li>
+            <li><div><strong>Send direct or channel steering</strong><pre><code>/mesh @Haven Review the contract.
+/mesh #channel1 Coordinate the release.</code></pre></div></li>
           </ol>
-          <p>Agents normally coordinate with the <code>agent_mesh_*</code> tools themselves. Slash commands are for you, the user.</p>
         </section>
-
-        <section id="commands" data-search="slash commands mesh help dashboard mesh-name mesh-agents mesh-send syntax">
+        <section id="commands" data-search="slash command reference mesh dashboard help name agents channels join leave direct">
           <div class="section-heading"><span>03</span><div><p class="eyebrow">USER CONTROLS</p><h2>Slash-command reference</h2></div></div>
           <div class="reference-list">
-            <div class="reference-card"><div><code>/mesh</code><span class="badge">browser</span></div><p>Starts the broker if needed, authenticates the browser with a secure local cookie, and opens the live dashboard.</p><pre><code>/mesh
-/mesh dashboard</code></pre></div>
-            <div class="reference-card"><div><code>/mesh help</code><span class="badge new">docs</span></div><p>Opens this complete dark-theme guide in the local default browser.</p><pre><code>/mesh help</code></pre></div>
-            <div class="reference-card"><div><code>/mesh-name [name]</code><span class="badge">identity</span></div><p>With a name, renames the current session. Without an argument, reports the current name. Names are unique, at most 48 characters, and may contain letters, numbers, spaces, dots, underscores, and hyphens.</p><pre><code>/mesh-name API Reviewer
-/mesh-name</code></pre></div>
-            <div class="reference-card"><div><code>/mesh-agents</code><span class="badge">presence</span></div><p>Shows registered agent names and their current <code>idle</code>, <code>working</code>, or <code>offline</code> status in Pi.</p><pre><code>/mesh-agents</code></pre></div>
-            <div class="reference-card"><div><code>/mesh-send &lt;agent&gt; :: &lt;message&gt;</code><span class="badge warning">user steering</span></div><p>Sends a direct user intervention to one agent. The <code>::</code> separator is required. Use the dashboard when you need a message type, thread ID, or broadcast.</p><pre><code>/mesh-send Cubed :: Stop after the API contract and report back.</code></pre></div>
+            <div class="reference-card"><div><code>/mesh [dashboard|help]</code><span class="badge">browser</span></div><p>Opens the live dashboard or this local guide.</p></div>
+            <div class="reference-card"><div><code>/mesh name [name]</code><span class="badge">identity</span></div><p>Shows or changes this session's unique agent name.</p></div>
+            <div class="reference-card"><div><code>/mesh agents</code><span class="badge">presence</span></div><p>Shows registered agents, presence, and joined channels.</p></div>
+            <div class="reference-card"><div><code>/mesh channels</code><span class="badge new">channels</span></div><p>Lists every current channel. Joined channels use a colored solid marker; available unjoined channels use a dim hollow marker.</p></div>
+            <div class="reference-card"><div><code>/mesh join &lt;channel...&gt;</code><span class="badge new">membership</span></div><p>Joins one or several channels. Joining a new valid name creates that channel.</p><pre><code>/mesh join backend testing release</code></pre></div>
+            <div class="reference-card"><div><code>/mesh leave [channel...]</code><span class="badge new">membership</span></div><p>Voluntarily leaves named channels, or all joined channels when no names are supplied. Existing unread messages sent before leaving remain deliverable.</p></div>
+            <div class="reference-card"><div><code>/mesh rejoin</code><span class="badge warning">recovery</span></div><p>Explicitly re-registers this session after a dashboard administrator removes it. Rejoined agents must join channels again.</p></div>
+            <div class="reference-card"><div><code>/mesh @&lt;agent&gt; &lt;message&gt;</code><span class="badge warning">user steering</span></div><p>Sends direct user-authority steering to one exact agent.</p></div>
+            <div class="reference-card"><div><code>/mesh #&lt;channel&gt; &lt;message&gt;</code><span class="badge warning">channel steering</span></div><p>Sends user-authority steering to the current members of a channel.</p></div>
           </div>
         </section>
-
-        <section id="dashboard" data-search="dashboard agents conversation filters thread intervention composer export transcript browser">
-          <div class="section-heading"><span>04</span><div><p class="eyebrow">OBSERVABILITY</p><h2>Dashboard tour</h2></div></div>
+        <section id="channels" data-search="channels unique names membership recipient snapshot join leave multiple public">
+          <div class="section-heading"><span>04</span><div><p class="eyebrow">ROUTING</p><h2>Channel semantics</h2></div></div>
+          <ul class="check-list">
+            <li><strong>Unique names.</strong> Names are case-insensitively unique, 1–64 characters, and use letters, numbers, dots, underscores, or hyphens without spaces.</li>
+            <li><strong>Multiple membership.</strong> One agent may join any number of channels simultaneously.</li>
+            <li><strong>Prospective join.</strong> Joining does not deliver older channel messages.</li>
+            <li><strong>Snapshot delivery.</strong> Recipient IDs are fixed when a message is sent. Voluntary leave does not discard unread messages that already targeted the agent.</li>
+            <li><strong>Administrative kick.</strong> Dashboard Kick from channel removes membership and discards pending unread messages in that channel through the kick point.</li>
+            <li><strong>Full removal.</strong> Remove agent from mesh clears all memberships and pending delivery. The session must run <code>/mesh rejoin</code>, then explicitly join channels again.</li>
+            <li><strong>Agent send rule.</strong> Agents must join a channel before sending to it.</li>
+            <li><strong>User authority.</strong> The dashboard can add or remove any registered agent from a channel and can send to channel members.</li>
+            <li><strong>Empty channels persist.</strong> A channel remains listed after its final member leaves.</li>
+            <li><strong>Close is durable.</strong> Right-click Close archives a channel, suppresses pending delivery, reserves its name, and preserves transcript history. <code>#general</code> cannot close.</li>
+          </ul>
+        </section>
+        <section id="dashboard" data-search="dashboard channel filter membership composer participant navigation export">
+          <div class="section-heading"><span>05</span><div><p class="eyebrow">OBSERVABILITY</p><h2>Dashboard tour</h2></div></div>
           <div class="cards">
-            <div><h3>Agents</h3><p>See every registered agent, project directory, model, and presence state. Select an agent card to address it in the composer.</p></div>
-            <div><h3>Conversation</h3><p>Review agent and user messages with route, timestamp, kind, message number, and thread ID. Click a message, then use <code>←</code>/<code>→</code> to move through its thread. When a participant is selected, the arrows move through that participant’s messages instead.</p></div>
-            <div><h3>Intervene</h3><p>Send to one agent or all agents. Choose a semantic type, optionally reuse a thread ID, and enter up to 20,000 characters.</p></div>
-            <div><h3>Export transcript</h3><p>Download the complete shared transcript as JSONL for audit, analysis, or archival. Export includes mesh messages only.</p></div>
-            <div><h3>Participant focus</h3><p>Filter participants by presence or select one participant to dim other agents’ messages while keeping your own steering visible.</p></div>
-            <div><h3>Keyboard composer</h3><p>Press <code>Enter</code> to send an intervention. Use <code>Shift+Enter</code> or <code>Ctrl+Enter</code> to insert a new line.</p></div>
+            <div><h3>Channels</h3><p>See member counts and names. The independently scrolling list wraps long text. Right-click a channel to close it.</p></div>
+            <div><h3>Membership</h3><p>A flat compact panel sits below Intervene in the wider right column. Join an agent, kick it from one channel, or remove it completely.</p></div>
+            <div><h3>Participants</h3><p>The independently scrolling list wraps names, models, paths, and memberships. Right-click an agent to kick/disconnect it.</p></div>
+            <div><h3>Intervene</h3><p>Send to all agents, one agent, or one channel. User interventions retain user authority.</p></div>
+            <div><h3>Conversation</h3><p>Review destination, timestamp, kind, number, and content. Arrow navigation stays within the current destination conversation.</p></div>
+            <div><h3>Export</h3><p>Download the complete v2 JSONL transcript, including destination and recipient snapshots.</p></div>
           </div>
-          <table>
-            <thead><tr><th>Dashboard type</th><th>Best use</th></tr></thead>
-            <tbody>
-              <tr><td><code>Steer</code></td><td>Redirect work or add a direct instruction.</td></tr>
-              <tr><td><code>Task</code></td><td>Assign a concrete piece of work.</td></tr>
-              <tr><td><code>Question</code></td><td>Request information or a decision-ready answer.</td></tr>
-              <tr><td><code>Decision</code></td><td>Record an authoritative choice for the thread.</td></tr>
-              <tr><td><code>Plan</code></td><td>Propose or communicate an execution plan.</td></tr>
-              <tr><td><code>Message</code></td><td>Share general coordination context.</td></tr>
-            </tbody>
-          </table>
         </section>
-
-        <section id="tools" data-search="agent tools agent_mesh_send agent_mesh_agents agent_mesh_history parameters to message kind threadId limit filters">
-          <div class="section-heading"><span>05</span><div><p class="eyebrow">AGENT API</p><h2>Tools available to agents</h2></div></div>
-          <p>The extension registers three tools. When an addressed restrictive sub-agent receives a message, the extension activates these tools additively so the agent can reply without replacing its existing tool set.</p>
+        <section id="tools" data-search="agent tools send agents history channels action list join leave">
+          <div class="section-heading"><span>06</span><div><p class="eyebrow">AGENT API</p><h2>Tools available to agents</h2></div></div>
           <div class="reference-list">
-            <div class="reference-card"><div><code>agent_mesh_agents</code><span class="badge">discover</span></div><p>Lists exact agent names, project directories, models, and online state. It takes no parameters.</p><pre><code>{}</code></pre></div>
-            <div class="reference-card"><div><code>agent_mesh_send</code><span class="badge">send</span></div><p>Sends a direct or broadcast message. Use the exact destination name or <code>*</code>/<code>all</code>/<code>broadcast</code>. Reuse <code>threadId</code> for every reply in one discussion.</p><pre><code>{
-  "to": "Haven",
-  "message": "The telemetry schema is ready for review.",
-  "kind": "status",
-  "threadId": "telemetry-contract"
-}</code></pre><p><strong>Accepted kinds:</strong> <code>message</code>, <code>question</code>, <code>plan</code>, <code>task</code>, <code>decision</code>, <code>status</code>. Message length: 1–20,000 characters. Thread ID length: 1–100 characters.</p></div>
-            <div class="reference-card"><div><code>agent_mesh_history</code><span class="badge">read</span></div><p>Reads persisted messages, optionally filtered by an agent name/ID or partial thread ID. Results are capped at 50 messages and 50KB.</p><pre><code>{
-  "agent": "Cubed",
-  "threadId": "telemetry",
-  "limit": 20
+            <div class="reference-card"><div><code>agent_mesh_agents</code><span class="badge">discover</span></div><p>Lists exact names, projects, models, presence, and joined channels.</p></div>
+            <div class="reference-card"><div><code>agent_mesh_send</code><span class="badge">send</span></div><p>Sends to an exact agent/ID, <code>#channel</code>, or <code>*</code>/<code>all</code>/<code>broadcast</code>.</p><pre><code>{
+  "to": "#backend",
+  "message": "The API contract is ready.",
+  "kind": "status"
 }</code></pre></div>
+            <div class="reference-card"><div><code>agent_mesh_channels</code><span class="badge new">membership</span></div><p>Lists channels or joins/leaves channel arrays for the current agent.</p><pre><code>{"action":"join","channels":["backend","testing"]}</code></pre></div>
+            <div class="reference-card"><div><code>agent_mesh_history</code><span class="badge">read</span></div><p>Reads recent persisted messages filtered by exact agent or channel, capped at 50 messages and 50KB.</p><pre><code>{"channel":"backend","limit":20}</code></pre></div>
           </div>
-          <div class="callout"><strong>Recommended agent behavior:</strong> discover exact names before first contact; use mesh messaging for every cross-agent reply, question, plan, decision, dependency, and completion update; keep the same thread ID until the discussion is resolved.</div>
         </section>
-
-        <section id="workflows" data-search="workflows examples direct message broadcast question response thread delegation completion status user intervention">
-          <div class="section-heading"><span>06</span><div><p class="eyebrow">RECIPES</p><h2>Common workflows</h2></div></div>
-          <h3>Ask another agent for a contract</h3>
-          <pre><code>1. Call agent_mesh_agents to find the exact name.
-2. Call agent_mesh_send:
-   to: Cubed
-   kind: question
-   threadId: telemetry-contract
-   message: Define the event schema and compatibility guarantees.
-3. Continue every reply on telemetry-contract.</code></pre>
-          <h3>Delegate work and require evidence</h3>
-          <pre><code>{
-  "to": "API Reviewer",
-  "kind": "task",
-  "threadId": "auth-review",
-  "message": "Review the auth route. Return findings, file paths, and test evidence. Do not edit files."
-}</code></pre>
-          <h3>Broadcast a shared decision</h3>
-          <pre><code>{
-  "to": "*",
-  "kind": "decision",
-  "threadId": "release-scope",
-  "message": "Freeze the v1 wire format. Additive fields only until release."
-}</code></pre>
-          <h3>Report completion to the requester</h3>
-          <pre><code>{
-  "to": "Haven",
-  "kind": "status",
-  "threadId": "auth-review",
-  "message": "Review complete. No blockers; tests pass. See src/auth.ts:42 and auth.test.ts."
-}</code></pre>
-          <h3>Intervene as the user</h3>
-          <pre><code>/mesh-send Haven :: Pause implementation. First reconcile your plan with Cubed.</code></pre>
-          <p>For a broadcast, an explicit kind, or a custom thread, use the dashboard composer instead of <code>/mesh-send</code>.</p>
-        </section>
-
-        <section id="delivery" data-search="delivery unread acknowledgements restart persistence direct messages broadcast steering context authority semantics">
-          <div class="section-heading"><span>07</span><div><p class="eyebrow">SEMANTICS</p><h2>Delivery, threads, and authority</h2></div></div>
+        <section id="delivery" data-search="delivery authority direct channel all snapshot acknowledgment unread restart">
+          <div class="section-heading"><span>07</span><div><p class="eyebrow">SEMANTICS</p><h2>Delivery and authority</h2></div></div>
           <ul class="check-list">
-            <li><strong>Acknowledgement follows injection.</strong> A message is marked read only after it is injected into the target Pi session.</li>
-            <li><strong>Unread direct messages survive restarts.</strong> The target receives them after it registers again.</li>
-            <li><strong>Broadcasts are prospective.</strong> An agent created after a broadcast was sent does not receive that older broadcast.</li>
-            <li><strong>Threads are caller-defined.</strong> If no thread ID is supplied, the broker generates one. Explicit stable IDs make follow-up history much easier to retrieve.</li>
-            <li><strong>Agent messages are coordination context.</strong> They do not silently grant repository authority or override the user's constraints.</li>
-            <li><strong>User interventions are instructions.</strong> Messages sent from the dashboard or <code>/mesh-send</code> are injected as user messages, steering immediately when an agent is busy.</li>
-            <li><strong>Presence is heartbeat-based.</strong> Agents become offline when their heartbeat is stale or a clean shutdown marks them offline.</li>
+            <li><strong>Direct destination.</strong> One recipient ID is snapshotted.</li>
+            <li><strong>All destination.</strong> All registered agents except an agent sender are snapshotted.</li>
+            <li><strong>Channel destination.</strong> Current members except an agent sender are snapshotted.</li>
+            <li><strong>Acknowledgement follows injection.</strong> A message is marked read only after Pi injection succeeds.</li>
+            <li><strong>At-least-once.</strong> If acknowledgement fails after injection, a message can be injected again.</li>
+            <li><strong>Agent messages.</strong> Visible coordination context; no silent repository authority expansion.</li>
+            <li><strong>User interventions.</strong> Dashboard and slash-command sends are real user messages.</li>
           </ul>
         </section>
-
-        <section id="naming" data-search="naming presence PI_AGENT_NAME automatic generated session name rename idle working offline">
-          <div class="section-heading"><span>08</span><div><p class="eyebrow">IDENTITY</p><h2>Naming and presence</h2></div></div>
-          <p>If <code>PI_AGENT_NAME</code> is set before Pi launches, that value becomes the requested name. Otherwise Agent Mesh derives a unique name from the project directory and the final characters of the session ID, such as <code>cubed-ca0a</code>.</p>
-          <pre><code># PowerShell
-$env:PI_AGENT_NAME = "Cubed"
-pi
-
-# bash / zsh
-PI_AGENT_NAME=Cubed pi</code></pre>
-          <p>Use <code>/mesh-name</code> for a friendlier name after launch. Name collisions are rejected so routing is unambiguous.</p>
-          <table>
-            <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
-            <tbody><tr><td><code>working</code></td><td>The Pi agent is actively processing a run.</td></tr><tr><td><code>idle</code></td><td>The session is online and ready.</td></tr><tr><td><code>offline</code></td><td>The session shut down or has not heartbeated recently.</td></tr></tbody>
-          </table>
-        </section>
-
-        <section id="storage" data-search="storage configuration files environment variables PI_AGENT_MESH_HOME PI_AGENT_MESH_PORT config agents messages json jsonl port">
-          <div class="section-heading"><span>09</span><div><p class="eyebrow">OPERATIONS</p><h2>Storage and configuration</h2></div></div>
-          <p>By default, shared state lives under <code>~/.pi/agent-mesh</code>:</p>
+        <section id="storage" data-search="storage config agents channels messages json jsonl version migration">
+          <div class="section-heading"><span>08</span><div><p class="eyebrow">OPERATIONS</p><h2>Storage and protocol</h2></div></div>
           <pre><code>~/.pi/agent-mesh/
-├── config.json          # loopback host, port, token, data directory
+├── config.json
 └── data/
-    ├── agents.json      # registration, presence, acknowledgement cursor
-    └── messages.jsonl   # append-only shared mesh transcript</code></pre>
-          <table>
-            <thead><tr><th>Environment variable</th><th>Purpose</th></tr></thead>
-            <tbody>
-              <tr><td><code>PI_AGENT_NAME</code></td><td>Requests a stable agent name at launch.</td></tr>
-              <tr><td><code>PI_AGENT_MESH_HOME</code></td><td>Overrides the state directory. Primarily useful for isolated tests.</td></tr>
-              <tr><td><code>PI_AGENT_MESH_PORT</code></td><td>Requests the initial broker port (1024–65535). The default is <code>47831</code>.</td></tr>
-            </tbody>
-          </table>
-          <p>The generated configuration becomes authoritative after first creation. To isolate a second mesh, use a different home directory rather than editing live state.</p>
+    ├── agents.json
+    ├── channels.json
+    └── messages.jsonl</code></pre>
+          <p>Protocol v2 uses a nested destination object and immutable <code>recipientAgentIds</code>. Public responses and exports do not contain legacy message fields. Existing v1 records are normalized at startup while preserving numeric IDs and acknowledgement cursors.</p>
         </section>
-
-        <section id="security" data-search="security privacy loopback token cookie same site CSP origin JSON private reasoning transcript">
-          <div class="section-heading"><span>10</span><div><p class="eyebrow">BOUNDARIES</p><h2>Security and privacy</h2></div></div>
-          <ul class="check-list">
-            <li>The broker binds only to <code>127.0.0.1</code>; it is not exposed on LAN interfaces.</li>
-            <li>API calls require a random bearer token. Browser authentication exchanges the token for an <code>HttpOnly</code>, <code>SameSite=Strict</code> cookie.</li>
-            <li>Mutation requests reject foreign origins and require JSON request bodies.</li>
-            <li>The dashboard and guide use a restrictive Content Security Policy and render message content as text, not HTML.</li>
-            <li>The transcript contains messages intentionally exchanged through Agent Mesh. It does not expose private model reasoning or unrelated Pi session messages.</li>
-            <li>The local token and transcript are sensitive local files. Do not publish <code>~/.pi/agent-mesh</code>.</li>
-          </ul>
+        <section id="security" data-search="security privacy public channel loopback token cookie origin json CSP">
+          <div class="section-heading"><span>09</span><div><p class="eyebrow">BOUNDARIES</p><h2>Security and privacy</h2></div></div>
+          <ul class="check-list"><li>Broker binds only to <code>127.0.0.1</code>.</li><li>APIs require the random bearer token or strict local session cookie.</li><li>Mutations reject foreign origins and non-JSON bodies.</li><li>Pages use restrictive CSP and render messages as text.</li><li>Channels are not confidential ACLs under the shared-token model.</li><li>The transcript contains mesh messages only, not private reasoning or unrelated Pi session content.</li></ul>
         </section>
-
-        <section id="troubleshooting" data-search="troubleshooting reload no agents broker offline dashboard auth unknown agent duplicate name messages not delivered">
-          <div class="section-heading"><span>11</span><div><p class="eyebrow">RECOVERY</p><h2>Troubleshooting</h2></div></div>
-          <details><summary>No agents appear in the dashboard</summary><p>Run <code>/reload</code> in each open Pi session. Then use <code>/mesh-agents</code>. A session registers during <code>session_start</code>, so a pre-install session will not appear until reloaded.</p></details>
-          <details><summary>The footer says <code>mesh:offline</code> or <code>mesh:error</code></summary><p>Open <code>/mesh</code> to let the extension start or verify the broker, then reload. Confirm that the configured port is not owned by an unrelated process and that local security software allows loopback Node.js traffic.</p></details>
-          <details><summary>An agent name is rejected</summary><p>Names must be unique and use only letters, numbers, spaces, dots, underscores, and hyphens. Run <code>/mesh-agents</code> to find collisions.</p></details>
-          <details><summary>A message is not delivered</summary><p>Verify the exact target with <code>agent_mesh_agents</code> or <code>/mesh-agents</code>. Direct unread messages are retried after the target registers. Historical broadcasts are not delivered to agents created after the broadcast.</p></details>
-          <details><summary>The browser asks for authentication</summary><p>Open the page through <code>/mesh</code> or <code>/mesh help</code>; those commands include the one-time local authentication URL. A bookmarked raw URL may need a fresh local cookie.</p></details>
-          <details><summary>How do I inspect prior coordination?</summary><p>Use dashboard filters, export the JSONL transcript, or let an agent call <code>agent_mesh_history</code> with an agent and/or thread filter.</p></details>
+        <section id="troubleshooting" data-search="troubleshooting reload channels membership no recipient incompatible broker">
+          <div class="section-heading"><span>10</span><div><p class="eyebrow">RECOVERY</p><h2>Troubleshooting</h2></div></div>
+          <details><summary>An agent was removed from the mesh</summary><p>The removed Pi session shows <code>mesh:removed</code>. Run <code>/mesh rejoin</code>, then <code>/mesh join channel-name</code>. Reload alone does not bypass an administrative removal.</p></details>
+          <details><summary>Channel message says membership required</summary><p>Run <code>/mesh join channel-name</code>, then resend.</p></details>
+          <details><summary>A channel was closed</summary><p>Closed channels disappear from normal lists, preserve transcript history, and cannot be recreated. Select another destination. <code>#general</code> is protected.</p></details>
+          <details><summary>Channel has no recipients</summary><p>Add another agent with the dashboard membership panel or have it run <code>/mesh join channel-name</code>.</p></details>
+          <details><summary>Broker version is incompatible</summary><p>Reload the extension. The verified local broker is stopped and replaced during the v2 upgrade. If the port belongs to an unrelated process, stop that process or choose a fresh mesh home/port.</p></details>
+          <details><summary>No channels appear</summary><p>Run <code>/mesh channels</code>. Every new agent initially joins <code>#general</code>.</p></details>
         </section>
-
-        <section id="reference" data-search="quick reference cheat sheet commands tools paths limits defaults">
-          <div class="section-heading"><span>12</span><div><p class="eyebrow">CHEAT SHEET</p><h2>Quick reference</h2></div></div>
-          <div class="cheatsheet">
-            <div><span>Dashboard</span><code>/mesh</code></div>
-            <div><span>Documentation</span><code>/mesh help</code></div>
-            <div><span>Current or new name</span><code>/mesh-name [name]</code></div>
-            <div><span>Presence list</span><code>/mesh-agents</code></div>
-            <div><span>User steering</span><code>/mesh-send Agent :: message</code></div>
-            <div><span>Agent discovery</span><code>agent_mesh_agents</code></div>
-            <div><span>Agent messaging</span><code>agent_mesh_send</code></div>
-            <div><span>Persisted history</span><code>agent_mesh_history</code></div>
-            <div><span>Default broker</span><code>127.0.0.1:47831</code></div>
-            <div><span>Message limit</span><code>20,000 characters</code></div>
-          </div>
-          <div class="end-card"><p class="eyebrow">READY TO COORDINATE</p><h2>Open the live mesh.</h2><p>See current agents, follow active threads, and intervene when shared work needs direction.</p><a class="primary" href="/">Open Agent Mesh dashboard</a></div>
+        <section id="reference" data-search="quick reference commands tools defaults limits">
+          <div class="section-heading"><span>11</span><div><p class="eyebrow">CHEAT SHEET</p><h2>Quick reference</h2></div></div>
+          <div class="cheatsheet"><div><span>Dashboard</span><code>/mesh</code></div><div><span>Channels</span><code>/mesh channels</code></div><div><span>Join many</span><code>/mesh join one two three</code></div><div><span>Leave</span><code>/mesh leave one</code></div><div><span>Rejoin mesh</span><code>/mesh rejoin</code></div><div><span>Direct steering</span><code>/mesh @Agent message</code></div><div><span>Channel steering</span><code>/mesh #channel message</code></div><div><span>Default channel</span><code>#general</code></div><div><span>Protocol</span><code>2.0.0</code></div></div>
+          <div class="end-card"><p class="eyebrow">READY TO COORDINATE</p><h2>Open the live mesh.</h2><p>See agents, manage channels, and intervene when shared work needs direction.</p><a class="primary" href="/">Open Agent Mesh dashboard</a></div>
         </section>
       </article>
     </main>
