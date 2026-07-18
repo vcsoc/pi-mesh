@@ -1,0 +1,10 @@
+{
+  "name": "pi-skill-testit",
+  "version": "0.1.0",
+  "description": "Pi package for the testit skill.",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "pi": {
+    "skills": ["./skills"]
+  }
+}

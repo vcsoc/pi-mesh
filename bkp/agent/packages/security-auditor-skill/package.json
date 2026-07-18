@@ -1,0 +1,10 @@
+{
+  "name": "pi-skill-security-auditor",
+  "version": "0.1.0",
+  "description": "On-demand security review skill for code, APIs, auth, authorization, and infrastructure risk analysis.",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "pi": {
+    "skills": ["./skills"]
+  }
+}

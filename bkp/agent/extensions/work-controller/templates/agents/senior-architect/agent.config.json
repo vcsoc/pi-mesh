@@ -1,0 +1,14 @@
+{
+  "$schema": "../schema/agent-config.schema.json",
+  "id": "senior-architect",
+  "displayName": "Senior Architect",
+  "role": "Project-agnostic architecture, specifications, system boundaries, risk, and testing strategy as scoped by the orchestrator.",
+  "provider": "openai-codex",
+  "model": "gpt-5.6-sol",
+  "thinking": "high",
+  "tools": ["read", "bash", "grep", "find", "ls"],
+  "sessionDir": ".pi/sessions/agents",
+  "requiredFor": ["every feature", "architecture changes", "API changes", "database changes", "security changes"],
+  "handoffInputs": ["orchestrator task packet", "active project instructions", "relevant specifications", "repository structure"],
+  "handoffOutputs": ["architecture plan", "impact analysis", "acceptance criteria", "test strategy"]
+}

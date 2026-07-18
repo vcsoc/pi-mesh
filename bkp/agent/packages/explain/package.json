@@ -1,0 +1,13 @@
+{
+  "name": "pi-extension-explain",
+  "version": "0.1.0",
+  "description": "Pi package for the Explain extension.",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions"]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "../schema/agent-config.schema.json",
+  "id": "senior-test-engineer",
+  "displayName": "Senior Test Engineer",
+  "role": "Project-agnostic verification, test planning, automated/manual testing, evidence, scoring, and recommendation as scoped by the orchestrator.",
+  "provider": "openai-codex",
+  "model": "gpt-5.6-terra",
+  "thinking": "medium",
+  "tools": null,
+  "sessionDir": ".pi/sessions/agents",
+  "requiredFor": ["all features", "test planning", "test execution", "verification evidence"],
+  "handoffInputs": ["orchestrator task packet", "active project instructions", "acceptance criteria", "implementation summary", "test strategy", "changed files"],
+  "handoffOutputs": ["test plan", "test results", "bugs", "regression risks", "final recommendation"]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "pi-extension-gitnexus-mcp",
+  "version": "0.1.0",
+  "description": "Pi package for the GitNexus MCP extension.",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions"]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "pi-skill-goal",
+  "version": "0.1.0",
+  "description": "Pi package that provides the goal skill and /goal command.",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
+  }
+}

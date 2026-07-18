@@ -23,7 +23,6 @@ node_modules/
 Thumbs.db
 work-inspect-report.html
 pi-config
-bkp/
 agent/bin/
 agent/npm/
 agent/packages/

@@ -1,0 +1,10 @@
+{
+  "name": "pi-skill-kaban-worker",
+  "version": "0.1.0",
+  "description": "On-demand implementation skill for disciplined kanban-style task execution.",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "pi": {
+    "skills": ["./skills"]
+  }
+}

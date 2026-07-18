@@ -1,0 +1,10 @@
+{
+  "name": "pi-skill-dummy",
+  "version": "0.1.0",
+  "description": "Pi package for the dummy skill.",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "pi": {
+    "skills": ["./skills"]
+  }
+}

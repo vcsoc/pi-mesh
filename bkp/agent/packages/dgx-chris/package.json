@@ -1,0 +1,14 @@
+{
+  "name": "pi-extension-dgx-chris",
+  "version": "0.1.0",
+  "description": "Pi package for the dgx-chris custom provider extension.",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions"]
+  }
+}
