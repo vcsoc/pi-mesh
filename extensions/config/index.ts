@@ -4,7 +4,7 @@ import path from "node:path";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { formatHtml, formatMarkdown, formatTable, recommendedPath, scanConfig, summary } from "./core.mjs";
+import { formatHtml, formatMarkdown, formatTable, scanConfig, summary } from "./core.mjs";
 
 type Report = Awaited<ReturnType<typeof scanConfig>>;
 const VIEW_ROWS = 18;
@@ -22,18 +22,18 @@ class ConfigTable {
   invalidate() {}
   render(width: number) {
     const available = Math.max(40, width - 2), visible = this.report.rows.slice(this.offset, this.offset + VIEW_ROWS);
-    const naturalName = Math.max(18, ...this.report.rows.map((item) => visibleWidth(item.name))), naturalPath = Math.max(18, ...this.report.rows.map((item) => visibleWidth(recommendedPath(item))));
+    const naturalName = Math.max(18, ...this.report.rows.map((item) => visibleWidth(item.name))), naturalPath = Math.max(18, ...this.report.rows.map((item) => visibleWidth(item.path)));
     let nameWidth = naturalName, pathWidth = naturalPath;
-    const fixed = 10 + 13 + 8 + 4;
+    const fixed = 10 + 8 + 8 + 4;
     if (fixed + nameWidth + pathWidth > available) pathWidth = Math.max(18, available - fixed - nameWidth);
     if (fixed + nameWidth + pathWidth > available) nameWidth = Math.max(18, available - fixed - pathWidth);
     if (fixed + nameWidth + pathWidth > available) { pathWidth = Math.max(10, available - fixed - 18); nameWidth = Math.max(10, available - fixed - pathWidth); }
     const tableWidth = fixed + nameWidth + pathWidth;
-    const row = (kind: string, name: string, status: string, keep: string, location: string) => `${pad(kind, 10)} ${pad(name, nameWidth)} ${pad(status, 13)} ${pad(keep, 8)} ${pad(location, pathWidth)}`;
-    const s = summary(this.report), lines = [this.theme.fg("accent", this.theme.bold("Pi configuration comparison")), this.theme.fg("muted", `${s.total} entries · ${s.identical} identical · ${s.different} different · ${s.projectOnly} project-only · ${s.globalOnly} harness-only`), this.theme.fg("dim", row("TYPE", "NAME", "STATUS", "KEEP", "PATH")), this.theme.fg("border", "─".repeat(tableWidth))];
+    const row = (kind: string, name: string, scope: string, action: string, location: string) => `${pad(kind, 10)} ${pad(name, nameWidth)} ${pad(scope, 8)} ${pad(action, 8)} ${pad(location, pathWidth)}`;
+    const s = summary(this.report), lines = [this.theme.fg("accent", this.theme.bold("Pi configuration inventory")), this.theme.fg("muted", `${s.total} instances · ${s.kept} keep · ${s.removed} remove`), this.theme.fg("dim", row("TYPE", "NAME", "SCOPE", "ACTION", "PATH")), this.theme.fg("border", "─".repeat(tableWidth))];
     for (const item of visible) {
-      const rendered = row(item.kind, item.name, item.status, item.recommendation, recommendedPath(item));
-      lines.push(item.recommendation ? this.theme.fg("success", rendered) : rendered);
+      const rendered = row(item.kind, item.name, item.scope, item.action, item.path);
+      lines.push(item.action === "keep" ? this.theme.fg("success", rendered) : this.theme.fg("dim", rendered));
     }
     if (!visible.length) lines.push(this.theme.fg("warning", "No extensions or skills found."));
     lines.push("", this.theme.fg("dim", `${this.report.rows.length ? `${this.offset + 1}–${Math.min(this.report.rows.length, this.offset + VIEW_ROWS)} of ${this.report.rows.length} · ` : ""}↑/↓ scroll · Enter/Esc close`));
@@ -62,9 +62,9 @@ export default function configExtension(pi: ExtensionAPI) {
         if (ctx.mode === "tui") await ctx.ui.custom<void>((tui: any, theme: Theme, keys: any, done: () => void) => new ConfigTable(theme, report, keys, () => tui.requestRender(), done));
         const s = summary(report);
         if (ctx.mode !== "tui") {
-          const content = `\`\`\`text\n${formatTable(report)}\n\`\`\`\n\nSummary: ${s.total} total · ${s.identical} identical · ${s.different} different · ${s.projectOnly} project-only · ${s.globalOnly} harness-only`;
+          const content = `\`\`\`text\n${formatTable(report)}\n\`\`\`\n\nSummary: ${s.total} instances · ${s.kept} keep · ${s.removed} remove`;
           pi.sendMessage({ customType: "config-report", content, display: true }, { triggerTurn: false });
-          if (ctx.mode === "print") console.log(`${formatTable(report)}\n\nSummary: ${s.total} total · ${s.identical} identical · ${s.different} different · ${s.projectOnly} project-only · ${s.globalOnly} harness-only`);
+          if (ctx.mode === "print") console.log(`${formatTable(report)}\n\nSummary: ${s.total} instances · ${s.kept} keep · ${s.removed} remove`);
         } else ctx.ui.notify(`${s.total} config resources scanned.`, "info");
         if (output) ctx.ui.notify(`Exported report to ${output}`, "info");
       } catch (error) { ctx.ui.notify(`Unable to scan configuration: ${error instanceof Error ? error.message : String(error)}`, "error"); }
