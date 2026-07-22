@@ -1,1 +1,0 @@
-{"name":"pi-config-extension","private":true,"version":"1.0.0","type":"module","scripts":{"test":"node --test test/*.test.mjs","check":"node --check core.mjs && node --test test/*.test.mjs"},"peerDependencies":{"@earendil-works/pi-coding-agent":"*"}}
