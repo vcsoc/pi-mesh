@@ -14,6 +14,7 @@
     <div class="thread-name"><span>Channel</span><b id="top-thread">All destinations</b><span id="top-message-count">· 0 messages</span></div>
     <div class="top-actions">
       <span id="connection" class="connection offline">Connecting</span>
+      <label class="auto-control mesh-global-control"><span>Mesh enabled</span><span class="switch"><input id="mesh-enabled" type="checkbox"><span class="slider"></span></span></label>
       <label class="auto-control"><span>Auto-scroll latest</span><span class="switch"><input id="auto-scroll" type="checkbox" checked><span class="slider"></span></span></label>
       <div class="font-scale" aria-label="Message text size"><span>Message text</span><button id="font-down" type="button" aria-label="Decrease message text size">−</button><output id="font-level">100%</output><button id="font-up" type="button" aria-label="Increase message text size">+</button></div>
       <button id="jump-latest" type="button">Jump to latest</button>
@@ -42,6 +43,19 @@
     </main>
 
     <aside class="intervention">
+      <section class="compose mesh-controls" aria-labelledby="mesh-controls-title">
+        <div class="compose-head"><b id="mesh-controls-title">Mesh controls</b><span>runtime policy</span></div>
+        <div class="project-control">
+          <label>Project<select id="policy-project" aria-describedby="project-hash"></select></label>
+          <code id="project-hash" class="project-hash">No project</code>
+          <button id="toggle-project" type="button">Block project</button>
+        </div>
+        <div class="kick-all-control">
+          <label>Kick participants matching<select id="kick-all-status"><option value="offline" selected>Offline</option><option value="idle">Idle</option><option value="working">Working</option><option value="online">Online</option><option value="all">All statuses</option></select></label>
+          <button id="kick-all" class="danger" type="button">Kick all agents</button>
+        </div>
+        <output id="mesh-status" role="status"></output>
+      </section>
       <form id="composer" class="compose">
         <div class="compose-head"><b>Intervene</b><span>direct user steering</span></div>
         <div class="fields"><label>To<select id="to" required><option value="*">All agents</option></select></label><label>Intent<select id="kind"><option value="steer">Steer</option><option value="task">Task</option><option value="question">Question</option><option value="decision">Decision</option><option value="plan">Plan</option><option value="message">Message</option></select></label></div>
