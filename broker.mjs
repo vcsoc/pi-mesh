@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "2.4.1";
+const VERSION = "2.4.2";
 const MAX_BODY = 64 * 1024;
 const MAX_MESSAGE = 20_000;
 const MAX_CHANNEL = 64;
@@ -80,7 +80,7 @@ const key = (value) => String(value).trim().toLocaleLowerCase("en-US");
 let agents = recoverObject(agentsFile);
 let channelStore = recoverObject(channelsFile);
 let policy = recoverObject(policyFile);
-policy = { enabled: policy.enabled !== false, blockedProjectHashes: [...new Set(Array.isArray(policy.blockedProjectHashes) ? policy.blockedProjectHashes.filter((value) => /^[a-f0-9]{64}$/.test(value)) : [])].sort() };
+policy = { enabled: policy.enabled !== false, blockedProjectHashes: [...new Set(Array.isArray(policy.blockedProjectHashes) ? policy.blockedProjectHashes.filter((value) => /^[a-f0-9]{64}$/.test(value)) : [])].sort(), blockedProjectNames: Object.fromEntries(Object.entries(policy.blockedProjectNames || {}).filter(([hash, name]) => /^[a-f0-9]{64}$/.test(hash) && typeof name === "string" && name.trim()).map(([hash, name]) => [hash, name.trim().slice(0, 160)])) };
 function ensureChannel(value, createdBy = "system") {
 	const requested = cleanChannelName(value || DEFAULT_CHANNEL), channelKey = key(requested), existing = channelStore[channelKey];
 	if (existing) { if (existing.closedAt) throw Object.assign(new Error(`Channel #${existing.name} is closed`), { status: 410, code: "CHANNEL_CLOSED" }); return existing; }
@@ -95,6 +95,7 @@ for (const agent of Object.values(agents)) {
 	agent.channels = agent.removedAt ? [] : [...new Set(requested.filter(name => !channelStore[key(name)]?.closedAt).map((name) => ensureChannel(name, "migration").name))];
 	agent.enabled = agent.enabled !== false;
 	const project = projectIdentity(String(agent.cwd || ".")); agent.projectHash = project.projectHash; agent.projectName = project.projectName;
+	if (policy.blockedProjectHashes.includes(agent.projectHash) && !policy.blockedProjectNames[agent.projectHash]) policy.blockedProjectNames[agent.projectHash] = agent.projectName;
 }
 const messages = [];
 let migratedMessages = false;
@@ -268,7 +269,7 @@ function registrationIdentity(input, existing) {
 	if (suppliedHash !== project.projectHash || (existing?.projectHash && existing.projectHash !== project.projectHash)) throw Object.assign(new Error("projectHash does not match the canonical project identity"), { status: 409, code: "PROJECT_IDENTITY_MISMATCH" });
 	return { cwd, ...project, sessionFile: clean(input.sessionFile || "", "sessionFile", 4000, true), model: clean(input.model || "", "model", 300, true), status: ["idle", "working"].includes(input.status) ? input.status : "idle", enabled: existing?.enabled !== false };
 }
-const state = (agentId) => ({ version: VERSION, policy: { enabled: policy.enabled, blockedProjects: [...policy.blockedProjectHashes] }, agents: activeAgents().map(publicAgent).sort((a, b) => a.name.localeCompare(b.name)), channels: publicChannels(agentId), messages: messages.slice(-250), totalMessages: messages.length, oldestLoadedId: messages.slice(-250)[0]?.id || null, latestMessageId: messages.at(-1)?.id || 0 });
+const state = (agentId) => ({ version: VERSION, policy: { enabled: policy.enabled, blockedProjects: [...policy.blockedProjectHashes], blockedProjectNames: { ...policy.blockedProjectNames } }, agents: activeAgents().map(publicAgent).sort((a, b) => a.name.localeCompare(b.name)), channels: publicChannels(agentId), messages: messages.slice(-250), totalMessages: messages.length, oldestLoadedId: messages.slice(-250)[0]?.id || null, latestMessageId: messages.at(-1)?.id || 0 });
 function asset(response, name, type) { const path = join(extensionDir, name); return existsSync(path) ? text(response, 200, type, readFileSync(path)) : error(response, 404, "ASSET_NOT_FOUND", "Agent Mesh asset unavailable"); }
 
 const server = createServer(async (request, response) => {
@@ -296,7 +297,7 @@ const server = createServer(async (request, response) => {
 		if (url.pathname === "/api/policy/global") {
 			if (typeof input.enabled !== "boolean") throw Object.assign(new Error("enabled must be boolean"), { status: 400, code: "INVALID_INPUT" });
 			policy.enabled = input.enabled; persistPolicy();
-			return json(response, 200, { policy: { enabled: policy.enabled, blockedProjects: [...policy.blockedProjectHashes] } });
+			return json(response, 200, { policy: { enabled: policy.enabled, blockedProjects: [...policy.blockedProjectHashes], blockedProjectNames: { ...policy.blockedProjectNames } } });
 		}
 		if (url.pathname === "/api/agents/toggle") {
 			const id = clean(input.agentId, "agentId", 160), agent = agents[id];
@@ -308,8 +309,8 @@ const server = createServer(async (request, response) => {
 		if (url.pathname === "/api/projects/toggle") {
 			const projectHash = cleanProjectHash(input.projectHash);
 			if (typeof input.blocked !== "boolean") throw Object.assign(new Error("blocked must be boolean"), { status: 400, code: "INVALID_INPUT" });
-			const blocked = new Set(policy.blockedProjectHashes); if (input.blocked) blocked.add(projectHash); else blocked.delete(projectHash); policy.blockedProjectHashes = [...blocked].sort(); persistPolicy();
-			return json(response, 200, { projectHash, blocked: input.blocked, policy: { enabled: policy.enabled, blockedProjects: [...policy.blockedProjectHashes] } });
+			const blocked = new Set(policy.blockedProjectHashes); if (input.blocked) { blocked.add(projectHash); const project = Object.values(agents).find((agent) => agent.projectHash === projectHash); if (project?.projectName) policy.blockedProjectNames[projectHash] = project.projectName; } else { blocked.delete(projectHash); delete policy.blockedProjectNames[projectHash]; } policy.blockedProjectHashes = [...blocked].sort(); persistPolicy();
+			return json(response, 200, { projectHash, blocked: input.blocked, policy: { enabled: policy.enabled, blockedProjects: [...policy.blockedProjectHashes], blockedProjectNames: { ...policy.blockedProjectNames } } });
 		}
 		if (url.pathname === "/api/agents/kick-all") {
 			const status = clean(input.status || "all", "status", 16);
