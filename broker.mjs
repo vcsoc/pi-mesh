@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "2.3.0";
+const VERSION = "2.4.1";
 const MAX_BODY = 64 * 1024;
 const MAX_MESSAGE = 20_000;
 const MAX_CHANNEL = 64;
@@ -92,7 +92,7 @@ ensureChannel(DEFAULT_CHANNEL);
 
 for (const agent of Object.values(agents)) {
 	const requested = Array.isArray(agent.channels) ? agent.channels : [DEFAULT_CHANNEL];
-	agent.channels = [...new Set(requested.map((name) => ensureChannel(name, "migration").name))];
+	agent.channels = agent.removedAt ? [] : [...new Set(requested.filter(name => !channelStore[key(name)]?.closedAt).map((name) => ensureChannel(name, "migration").name))];
 	agent.enabled = agent.enabled !== false;
 	const project = projectIdentity(String(agent.cwd || ".")); agent.projectHash = project.projectHash; agent.projectName = project.projectName;
 }
@@ -113,6 +113,12 @@ if (existsSync(messagesFile)) for (const line of readFileSync(messagesFile, "utf
 }
 if (migratedMessages) writeFileSync(messagesFile, messages.map((item) => JSON.stringify(item)).join("\n") + (messages.length ? "\n" : ""), { encoding: "utf8", mode: 0o600 });
 let nextId = messages.reduce((max, item) => Math.max(max, item.id), 0) + 1;
+for (const agent of Object.values(agents)) {
+ const previous = agent.activeChannel;
+ repairActiveChannel(agent);
+ // Legacy registrations start their new active-channel delivery scope at upgrade time.
+ if (previous === undefined) agent.activeSinceId = nextId - 1;
+}
 atomic(channelsFile, channelStore);
 atomic(policyFile, policy);
 if (Object.keys(agents).length) atomic(agentsFile, agents);
@@ -141,8 +147,15 @@ async function body(request) {
 }
 function mutationOrigin(request) { if (request.headers.origin && request.headers.origin !== origin) throw Object.assign(new Error("Request origin is not allowed"), { status: 403, code: "ORIGIN_NOT_ALLOWED" }); }
 function activeAgents() { return Object.values(agents).filter((item) => !item.removedAt); }
-function channelKeys(item) { return new Set((item?.channels || []).map(key)); }
-function sharesChannel(left, right) { const rightKeys = channelKeys(right); return (left?.channels || []).some((name) => rightKeys.has(key(name))); }
+function activeChannel(agent) { return (agent?.channels || []).find(name => key(name) === key(agent?.activeChannel || "")) || null; }
+function sharesChannel(left, right) { const channel = activeChannel(left); return Boolean(channel && key(channel) === key(activeChannel(right) || "")); }
+function setActiveChannel(agent, name) {
+ if (key(agent.activeChannel || "") !== key(name || "")) agent.activeSinceId = nextId - 1;
+ agent.activeChannel = name || null;
+}
+function repairActiveChannel(agent) {
+ setActiveChannel(agent, activeChannel(agent) || [...(agent.channels || [])].sort((a,b)=>a.localeCompare(b))[0] || null);
+}
 function projectBlocked(item) { return policy.blockedProjectHashes.includes(item.projectHash); }
 function agentOperational(item) { return Boolean(item && !item.removedAt && policy.enabled && item.enabled !== false && !projectBlocked(item)); }
 function policyError(item) {
@@ -162,19 +175,21 @@ function findAgent(value) { return activeAgents().find((item) => item.id === val
 function availableAgentName(name, except) { if (Object.values(agents).some((item) => item.id !== except && key(item.name) === key(name))) throw Object.assign(new Error(`Agent name is already in use: ${name}`), { status: 409, code: "AGENT_NAME_TAKEN" }); }
 function publicAgent(item) {
 	const enabled = item.enabled !== false, blocked = projectBlocked(item);
-	return { id: item.id, name: item.name, cwd: item.cwd, sessionFile: item.sessionFile || null, model: item.model || null, status: Date.now() - Number(item.lastSeenAt || 0) <= ONLINE_MS && item.status !== "offline" ? item.status : "offline", enabled, effectiveEnabled: policy.enabled && enabled && !blocked, projectHash: item.projectHash, projectName: item.projectName, projectBlocked: blocked, lastSeenAt: item.lastSeenAt, registeredAt: item.registeredAt, lastAck: Number(item.lastAck || 0), generation: Number(item.generation || 1), channels: [...(item.channels || [])].sort((a, b) => a.localeCompare(b)) };
+	return { id: item.id, name: item.name, cwd: item.cwd, sessionFile: item.sessionFile || null, model: item.model || null, status: Date.now() - Number(item.lastSeenAt || 0) <= ONLINE_MS && item.status !== "offline" ? item.status : "offline", enabled, effectiveEnabled: policy.enabled && enabled && !blocked, projectHash: item.projectHash, projectName: item.projectName, projectBlocked: blocked, lastSeenAt: item.lastSeenAt, registeredAt: item.registeredAt, lastAck: Number(item.lastAck || 0), generation: Number(item.generation || 1), activeChannel: activeChannel(item), channels: [...(item.channels || [])].sort((a, b) => a.localeCompare(b)) };
 }
 function publicChannels(agentId) {
 	const joinedKeys = new Set((agents[agentId]?.channels || []).map(key));
 	return Object.values(channelStore).filter((channel) => !channel.closedAt).map((channel) => {
 		const members = activeAgents().filter((agent) => (agent.channels || []).some((name) => key(name) === key(channel.name)));
-		return { ...channel, joined: joinedKeys.has(key(channel.name)), memberIds: members.map((member) => member.id), memberNames: members.map((member) => member.name).sort((a, b) => a.localeCompare(b)), memberCount: members.length };
+		return { ...channel, active: key(activeChannel(agents[agentId]) || "") === key(channel.name), joined: joinedKeys.has(key(channel.name)), memberIds: members.map((member) => member.id), memberNames: members.map((member) => member.name).sort((a, b) => a.localeCompare(b)), memberCount: members.length };
 	}).sort((a, b) => a.name.localeCompare(b.name));
 }
 function updateMembership(agentId, names, action) {
 	const agent = requireOperationalAgent(agentId);
 	if (!Array.isArray(names) || names.length === 0) throw Object.assign(new Error("At least one channel is required"), { status: 400, code: "INVALID_CHANNELS" });
 	const requestedNames = names.map(cleanChannelName);
+	// Validate the whole batch before mutating or creating any memberships.
+	if (action === "join") for (const name of requestedNames) if (channelStore[key(name)]?.closedAt) throw Object.assign(new Error(`Channel #${name} is closed`), { status: 410, code: "CHANNEL_CLOSED" });
 	if (action === "leave") for (const requested of requestedNames) if (!channelStore[key(requested)]) throw Object.assign(new Error(`Unknown channel: ${requested}`), { status: 404, code: "CHANNEL_NOT_FOUND" });
 	const current = new Map((agent.channels || []).map((name) => [key(name), name]));
 	const changed = [];
@@ -183,20 +198,29 @@ function updateMembership(agentId, names, action) {
 		else { const channel = channelStore[key(requested)]; if (current.delete(key(channel.name))) changed.push(channel.name); }
 	}
 	agent.channels = [...current.values()].sort((a, b) => a.localeCompare(b));
+	if (action === "join") setActiveChannel(agent, channelStore[key(requestedNames[0])].name);
+	else {
+	 agent.channelRevokedThrough ||= {};
+	 for (const name of requestedNames) agent.channelRevokedThrough[key(name)] = nextId - 1;
+	 repairActiveChannel(agent);
+	}
 	agent.lastSeenAt = Date.now();
 	persistChannels(); persistAgents();
 	return { agent: publicAgent(agent), channels: publicChannels(agentId), changed };
 }
 function appendMessage(input) {
 	const targetText = clean(input.to ?? "*", "to", 160), scopeAgent = input.scopeAgent || input.fromAgent || null;
+	const scopeChannel = scopeAgent ? activeChannel(scopeAgent) : null;
+	if (scopeAgent && !scopeChannel) throw Object.assign(new Error("Select an active channel with /mesh join or /mesh switch first"), { status: 403, code: "NO_ACTIVE_CHANNEL" });
 	let destination, recipients;
 	if (targetText.startsWith("#")) {
 		const requested = cleanChannelName(targetText.slice(1)), channel = channelStore[key(requested)];
 		if (!channel) throw Object.assign(new Error(`Unknown channel: ${requested}`), { status: 404, code: "CHANNEL_NOT_FOUND" });
 		if (channel.closedAt) throw Object.assign(new Error(`Channel #${channel.name} is closed`), { status: 410, code: "CHANNEL_CLOSED" });
 		if (scopeAgent && !scopeAgent.channels.some((name) => key(name) === key(channel.name))) throw Object.assign(new Error(`Join #${channel.name} before sending to it`), { status: 403, code: "CHANNEL_MEMBERSHIP_REQUIRED" });
+		if (scopeAgent && key(scopeChannel) !== key(channel.name)) throw Object.assign(new Error(`Switch to #${channel.name} before sending to it`), { status: 403, code: "ACTIVE_CHANNEL_REQUIRED" });
 		destination = { type: "channel", id: channel.name, name: channel.name };
-		recipients = activeAgents().filter((agent) => agentOperational(agent) && agent.id !== scopeAgent?.id && agent.channels.some((name) => key(name) === key(channel.name))).map((agent) => agent.id);
+		recipients = activeAgents().filter((agent) => agentOperational(agent) && agent.id !== scopeAgent?.id && agent.channels.some((name) => key(name) === key(channel.name)) && (!scopeAgent || sharesChannel(scopeAgent, agent))).map((agent) => agent.id);
 	} else if (targetText === "*" || ["all", "broadcast"].includes(key(targetText))) {
 		destination = { type: "all", id: null, name: "All agents" };
 		recipients = activeAgents().filter((agent) => agentOperational(agent) && agent.id !== scopeAgent?.id && (!scopeAgent || sharesChannel(scopeAgent, agent))).map((agent) => agent.id);
@@ -204,29 +228,39 @@ function appendMessage(input) {
 		const target = findAgent(targetText);
 		if (!target) throw Object.assign(new Error(`Unknown agent: ${targetText}`), { status: 404, code: "AGENT_NOT_FOUND" });
 		const blocked = policyError(target); if (blocked) throw blocked;
-		if (scopeAgent && !sharesChannel(scopeAgent, target)) throw Object.assign(new Error("Agents must share a channel before they can communicate"), { status: 403, code: "NO_SHARED_CHANNEL" });
+		if (scopeAgent && !sharesChannel(scopeAgent, target)) throw Object.assign(new Error("Agents must have the same active channel before they can communicate"), { status: 403, code: "NO_SHARED_CHANNEL" });
 		destination = { type: "agent", id: target.id, name: target.name };
 		recipients = [target.id];
 	}
 	recipients = [...new Set(recipients)].sort();
 	if (destination.type === "channel" && recipients.length === 0) throw Object.assign(new Error(`Channel #${destination.name} has no recipients`), { status: 409, code: "CHANNEL_HAS_NO_RECIPIENTS" });
 	const kind = ["message", "question", "plan", "task", "decision", "status", "steer"].includes(input.kind) ? input.kind : "message";
-	const item = { id: nextId++, messageId: randomBytes(12).toString("hex"), timestamp: new Date().toISOString(), fromType: input.fromType, fromAgentId: input.fromAgent?.id || null, scopeAgentId: input.fromType === "user" ? scopeAgent?.id || null : null, fromName: input.fromType === "user" ? "User" : input.fromAgent.name, destination, recipientAgentIds: recipients, kind, content: clean(input.content, "content", MAX_MESSAGE) };
+	const item = { id: nextId++, messageId: randomBytes(12).toString("hex"), timestamp: new Date().toISOString(), fromType: input.fromType, fromAgentId: input.fromAgent?.id || null, scopeAgentId: input.fromType === "user" ? scopeAgent?.id || null : null, fromName: input.fromType === "user" ? "User" : input.fromAgent.name, scopeChannel, destination, recipientAgentIds: recipients, kind, content: clean(input.content, "content", MAX_MESSAGE) };
 	appendFileSync(messagesFile, `${JSON.stringify(item)}\n`, { encoding: "utf8", mode: 0o600 }); messages.push(item); return item;
 }
+// Direct and broadcast destinations still belong to their immutable send-time channel.
+function messageChannel(item) { return item.scopeChannel || (item.destination.type === "channel" ? item.destination.name : null); }
 function messageInCurrentScope(item, recipient) {
 	if (item.destination.type === "channel" && !recipient.channels.some((name) => key(name) === key(item.destination.name))) return false;
 	const scopeId = item.fromAgentId || item.scopeAgentId; if (!scopeId) return true;
-	const scopeAgent = agents[scopeId]; return agentOperational(scopeAgent) && sharesChannel(scopeAgent, recipient);
+	const scopeAgent = agents[scopeId];
+	// Fail closed for old direct/all records without an immutable channel scope.
+	const channel = messageChannel(item);
+	return Boolean(channel && item.id > Number(recipient.activeSinceId || 0) && item.id > Number(scopeAgent?.activeSinceId || 0) && agentOperational(scopeAgent) && sharesChannel(scopeAgent, recipient) && key(channel) === key(activeChannel(recipient)));
 }
 function inbox(id, after) { const agent = agents[id], cutoffs = agent?.channelRevokedThrough || {}; return messages.filter((item) => item.id > after && item.fromAgentId !== id && item.recipientAgentIds.includes(id) && messageInCurrentScope(item, agent) && !(item.destination.type === "channel" && item.id <= Number(cutoffs[key(item.destination.name)] || 0))); }
 function messagesForAgent(agent, items) {
-	const joined = channelKeys(agent);
-	return items.filter((item) => item.destination.type === "channel" ? joined.has(key(item.destination.name)) : item.fromAgentId === agent.id || item.scopeAgentId === agent.id || item.recipientAgentIds.includes(agent.id));
+	const channel = activeChannel(agent);
+	return items.filter((item) => {
+	 if (item.destination.type === "channel") return Boolean(channel && key(channel) === key(item.destination.name));
+	 const own = item.fromAgentId === agent.id || item.scopeAgentId === agent.id || item.recipientAgentIds.includes(agent.id);
+	 const administrative = !item.fromAgentId && !item.scopeAgentId;
+	 return own && (administrative || Boolean(channel && item.scopeChannel && key(item.scopeChannel) === key(channel)));
+	});
 }
 function deactivateAgent(agent, removedBy) {
 	const result = publicAgent(agent);
-	agent.removedAt = new Date().toISOString(); agent.removedBy = removedBy; agent.channels = []; agent.status = "offline"; agent.lastAck = Number(messages.at(-1)?.id || 0); agent.generation = Number(agent.generation || 1) + 1;
+	agent.removedAt = new Date().toISOString(); agent.removedBy = removedBy; agent.channels = []; setActiveChannel(agent, null); agent.status = "offline"; agent.lastAck = Number(messages.at(-1)?.id || 0); agent.generation = Number(agent.generation || 1) + 1;
 	return result;
 }
 function registrationIdentity(input, existing) {
@@ -252,9 +286,10 @@ const server = createServer(async (request, response) => {
 		if (method === "GET" && url.pathname === "/help.js") return asset(response, "help.js", "text/javascript; charset=utf-8");
 		if (method === "GET" && url.pathname === "/api/state") return json(response, 200, state(url.searchParams.get("agentId") || ""));
 		if (method === "GET" && url.pathname === "/api/agents") { const agentId = url.searchParams.get("agentId") || "", originAgent = agentId ? requireOperationalAgent(agentId) : null, visible = originAgent ? activeAgents().filter((agent) => agent.id !== originAgent.id && agentOperational(agent) && sharesChannel(originAgent, agent)) : activeAgents(); return json(response, 200, { agents: visible.map(publicAgent) }); }
+		if (method === "GET" && url.pathname === "/api/agent") return json(response, 200, { agent: publicAgent(requireOperationalAgent(clean(url.searchParams.get("agentId"), "agentId", 160))) });
 		if (method === "GET" && url.pathname === "/api/channels") { const agentId = url.searchParams.get("agentId") || ""; if (agentId) requireOperationalAgent(agentId); return json(response, 200, { channels: publicChannels(agentId) }); }
 		if (method === "GET" && url.pathname === "/api/inbox") { const id = clean(url.searchParams.get("agentId"), "agentId", 160), agent = requireOperationalAgent(id), after = Math.max(Number(url.searchParams.get("after")) || 0, Number(agent.lastAck || 0)); return json(response, 200, { messages: inbox(id, after).slice(0, 50), lastAck: agent.lastAck || 0 }); }
-		if (method === "GET" && url.pathname === "/api/messages") { const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get("limit")) || 250)), before = Number(url.searchParams.get("before")) || Infinity, after = Math.max(0, Number(url.searchParams.get("after")) || 0), channel = url.searchParams.get("channel"), agentId = url.searchParams.get("agentId") || "", originAgent = agentId ? requireOperationalAgent(agentId) : null, visible = originAgent ? messagesForAgent(originAgent, messages) : messages, filtered = visible.filter((item) => item.id > after && item.id < before && (!channel || (item.destination.type === "channel" && key(item.destination.name) === key(String(channel).replace(/^#/, ""))))); return json(response, 200, { messages: before < Infinity ? filtered.slice(-limit) : filtered.slice(0, limit), totalMessages: visible.length }); }
+		if (method === "GET" && url.pathname === "/api/messages") { const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get("limit")) || 250)), before = Number(url.searchParams.get("before")) || Infinity, after = Math.max(0, Number(url.searchParams.get("after")) || 0), channel = url.searchParams.get("channel"), agentId = url.searchParams.get("agentId") || "", originAgent = agentId ? requireOperationalAgent(agentId) : null, visible = originAgent ? messagesForAgent(originAgent, messages) : messages, filtered = visible.filter((item) => item.id > after && item.id < before && (!channel || (messageChannel(item) && key(messageChannel(item)) === key(String(channel).replace(/^#/, ""))))); return json(response, 200, { messages: before < Infinity ? filtered.slice(-limit) : filtered.slice(0, limit), totalMessages: visible.length }); }
 		if (method === "GET" && url.pathname === "/api/export") return text(response, 200, "application/x-ndjson; charset=utf-8", existsSync(messagesFile) ? readFileSync(messagesFile) : Buffer.from(""), { "Content-Disposition": `attachment; filename="agent-mesh-${new Date().toISOString().slice(0, 10)}.jsonl"` });
 		if (method !== "POST") return error(response, 404, "NOT_FOUND", "Route not found");
 		mutationOrigin(request); const input = await body(request);
@@ -288,6 +323,7 @@ const server = createServer(async (request, response) => {
 			if (existing?.removedAt) return error(response, 410, "AGENT_REMOVED", "Agent was removed and must explicitly rejoin");
 			const name = existing?.name || cleanAgentName(input.requestedName); availableAgentName(name, id);
 			agents[id] = { ...existing, id, name, ...registrationIdentity(input, existing), channels: existing?.channels || [DEFAULT_CHANNEL], generation: Number(existing?.generation || 1), registeredAt: existing?.registeredAt || new Date().toISOString(), lastSeenAt: Date.now(), lastAck: existing ? Number(existing.lastAck || 0) : Number(messages.at(-1)?.id || 0) };
+			repairActiveChannel(agents[id]);
 			persistAgents(); const blocked = policyError(agents[id]); if (blocked) throw blocked;
 			return json(response, 200, { agent: publicAgent(agents[id]) });
 		}
@@ -295,7 +331,7 @@ const server = createServer(async (request, response) => {
 			const id = clean(input.agentId, "agentId", 160), existing = agents[id];
 			if (!existing?.removedAt) return error(response, 409, "AGENT_NOT_REMOVED", "Agent is already registered");
 			const identity = registrationIdentity(input, existing), blocked = policyError({ ...existing, ...identity }); if (blocked) throw blocked;
-			Object.assign(existing, identity, { removedAt: undefined, removedBy: undefined, channels: [], channelRevokedThrough: {}, generation: Number(existing.generation || 1) + 1, lastSeenAt: Date.now(), lastAck: Number(messages.at(-1)?.id || 0) });
+			Object.assign(existing, identity, { removedAt: undefined, removedBy: undefined, channels: [], activeChannel: null, activeSinceId: nextId - 1, channelRevokedThrough: {}, generation: Number(existing.generation || 1) + 1, lastSeenAt: Date.now(), lastAck: Number(messages.at(-1)?.id || 0) });
 			persistAgents(); return json(response, 200, { agent: publicAgent(existing) });
 		}
 		if (url.pathname === "/api/heartbeat") { const id = clean(input.agentId, "agentId", 160), agent = requireOperationalAgent(id); agent.lastSeenAt = Date.now(); agent.status = ["idle", "working"].includes(input.status) ? input.status : "idle"; agent.model = clean(input.model || "", "model", 300, true); persistAgents(); return json(response, 200, { agent: publicAgent(agent) }); }
@@ -303,11 +339,18 @@ const server = createServer(async (request, response) => {
 		if (url.pathname === "/api/rename") { const id = clean(input.agentId, "agentId", 160), current = requireOperationalAgent(id); const rawName = String(input.name ?? ""), embeddedForce = /(?:^|\s)(?:--force|-f)(?=\s|$)/i.test(rawName), name = cleanAgentName(rawName.replace(/(?:^|\s)(?:--force|-f)(?=\s|$)/gi, " ").replace(/\s+/g, " ").trim()), force = input.force === true || embeddedForce, conflict = Object.values(agents).find((item) => item.id !== id && key(item.name) === key(name)); let displaced = null; if (conflict) { if (!force) return error(response, 409, "AGENT_NAME_TAKEN", `Agent name is already in use: ${name}`); displaced = deactivateAgent(conflict, `force-rename:${id}`); let fallback; do fallback = `Disconnected-${randomBytes(6).toString("hex")}`; while (Object.values(agents).some((item) => item.id !== conflict.id && key(item.name) === key(fallback))); conflict.name = fallback; } current.name = name; current.lastSeenAt = Date.now(); persistAgents(); return json(response, 200, { agent: publicAgent(current), displaced }); }
 		if (url.pathname === "/api/agents/leave") { const id = clean(input.agentId, "agentId", 160), agent = agents[id]; if (!agent) return error(response, 404, "AGENT_NOT_FOUND", "Agent is not registered"); if (agent.removedAt) return error(response, 410, "AGENT_REMOVED", "Agent already left the mesh"); const left = deactivateAgent(agent, `agent:${id}`); persistAgents(); return json(response, 200, { left, removed: left, channels: publicChannels("") }); }
 		if (url.pathname === "/api/agents/remove") { const id = clean(input.agentId, "agentId", 160), agent = agents[id]; if (!agent || agent.removedAt) return error(response, 404, "AGENT_NOT_FOUND", "Agent is not registered"); const removed = deactivateAgent(agent, "dashboard"); persistAgents(); return json(response, 200, { removed, channels: publicChannels("") }); }
-		if (url.pathname === "/api/channels/kick") { const id = clean(input.agentId, "agentId", 160), agent = agents[id]; if (!agent || agent.removedAt) return error(response, 404, "AGENT_NOT_FOUND", "Agent is not registered"); if (!Array.isArray(input.channels) || !input.channels.length) return error(response, 400, "INVALID_CHANNELS", "At least one channel is required"); const requested = input.channels.map(cleanChannelName); for (const name of requested) { const channel = channelStore[key(name)]; if (!channel) return error(response, 404, "CHANNEL_NOT_FOUND", `Unknown channel: ${name}`); if (channel.closedAt) return error(response, 410, "CHANNEL_CLOSED", `Channel #${channel.name} is closed`); } const current = new Map(agent.channels.map((name) => [key(name), name])), changed = [], highWater = Number(messages.at(-1)?.id || 0); agent.channelRevokedThrough ||= {}; for (const name of requested) { const channel = channelStore[key(name)]; if (current.delete(key(channel.name))) changed.push(channel.name); agent.channelRevokedThrough[key(channel.name)] = highWater; } agent.channels = [...current.values()].sort((a, b) => a.localeCompare(b)); agent.lastSeenAt = Date.now(); persistAgents(); return json(response, 200, { agent: publicAgent(agent), channels: publicChannels(id), changed, revokedThrough: highWater }); }
-		if (url.pathname === "/api/channels/close") { const requested = cleanChannelName(input.channel), channelKey = key(requested), channel = channelStore[channelKey]; if (!channel) return error(response, 404, "CHANNEL_NOT_FOUND", `Unknown channel: ${requested}`); if (channelKey === key(DEFAULT_CHANNEL)) return error(response, 409, "CHANNEL_PROTECTED", `#${DEFAULT_CHANNEL} cannot be closed`); if (channel.closedAt) return json(response, 200, { closed: channel, changed: false, revokedThrough: channel.closedThrough, channels: publicChannels("") }); const highWater = Number(messages.at(-1)?.id || 0); for (const agent of Object.values(agents)) { agent.channels = (agent.channels || []).filter((name) => key(name) !== channelKey); agent.channelRevokedThrough ||= {}; agent.channelRevokedThrough[channelKey] = Math.max(Number(agent.channelRevokedThrough[channelKey] || 0), highWater); } channel.closedAt = new Date().toISOString(); channel.closedBy = "dashboard"; channel.closedThrough = highWater; persistAgents(); persistChannels(); return json(response, 200, { closed: channel, changed: true, revokedThrough: highWater, channels: publicChannels("") }); }
+		if (url.pathname === "/api/channels/kick") { const id = clean(input.agentId, "agentId", 160), agent = agents[id]; if (!agent || agent.removedAt) return error(response, 404, "AGENT_NOT_FOUND", "Agent is not registered"); if (!Array.isArray(input.channels) || !input.channels.length) return error(response, 400, "INVALID_CHANNELS", "At least one channel is required"); const requested = input.channels.map(cleanChannelName); for (const name of requested) { const channel = channelStore[key(name)]; if (!channel) return error(response, 404, "CHANNEL_NOT_FOUND", `Unknown channel: ${name}`); if (channel.closedAt) return error(response, 410, "CHANNEL_CLOSED", `Channel #${channel.name} is closed`); } const current = new Map(agent.channels.map((name) => [key(name), name])), changed = [], highWater = Number(messages.at(-1)?.id || 0); agent.channelRevokedThrough ||= {}; for (const name of requested) { const channel = channelStore[key(name)]; if (current.delete(key(channel.name))) changed.push(channel.name); agent.channelRevokedThrough[key(channel.name)] = highWater; } agent.channels = [...current.values()].sort((a, b) => a.localeCompare(b)); repairActiveChannel(agent); agent.lastSeenAt = Date.now(); persistAgents(); return json(response, 200, { agent: publicAgent(agent), channels: publicChannels(id), changed, revokedThrough: highWater }); }
+		if (url.pathname === "/api/channels/close") { const requested = cleanChannelName(input.channel), channelKey = key(requested), channel = channelStore[channelKey]; if (!channel) return error(response, 404, "CHANNEL_NOT_FOUND", `Unknown channel: ${requested}`); if (channelKey === key(DEFAULT_CHANNEL)) return error(response, 409, "CHANNEL_PROTECTED", `#${DEFAULT_CHANNEL} cannot be closed`); if (channel.closedAt) return json(response, 200, { closed: channel, changed: false, revokedThrough: channel.closedThrough, channels: publicChannels("") }); const highWater = Number(messages.at(-1)?.id || 0); for (const agent of Object.values(agents)) { agent.channels = (agent.channels || []).filter((name) => key(name) !== channelKey); repairActiveChannel(agent); agent.channelRevokedThrough ||= {}; agent.channelRevokedThrough[channelKey] = Math.max(Number(agent.channelRevokedThrough[channelKey] || 0), highWater); } channel.closedAt = new Date().toISOString(); channel.closedBy = "dashboard"; channel.closedThrough = highWater; persistAgents(); persistChannels(); return json(response, 200, { closed: channel, changed: true, revokedThrough: highWater, channels: publicChannels("") }); }
+		if (url.pathname === "/api/channels/switch") {
+			const agentId = clean(input.agentId, "agentId", 160), requested = cleanChannelName(input.channel), channel = channelStore[key(requested)];
+			requireOperationalAgent(agentId);
+			if (!channel) return error(response, 404, "CHANNEL_NOT_FOUND", `Unknown channel: ${requested}`);
+			if (channel.closedAt) return error(response, 410, "CHANNEL_CLOSED", `Channel #${channel.name} is closed`);
+			return json(response, 200, updateMembership(agentId, [channel.name], "join"));
+		}
 		if (url.pathname === "/api/channels/join") return json(response, 200, updateMembership(clean(input.agentId, "agentId", 160), input.channels, "join"));
 		if (url.pathname === "/api/channels/leave") return json(response, 200, updateMembership(clean(input.agentId, "agentId", 160), input.channels, "leave"));
-		if (url.pathname === "/api/agent/messages") { const id = clean(input.agentId, "agentId", 160), fromAgent = requireOperationalAgent(id); fromAgent.lastSeenAt = Date.now(); const item = appendMessage({ ...input, fromType: "agent", fromAgent }); persistAgents(); return json(response, 201, { message: item }); }
+		if (url.pathname === "/api/agent/messages") { const id = clean(input.agentId, "agentId", 160), fromAgent = requireOperationalAgent(id); fromAgent.lastSeenAt = Date.now(); const item = appendMessage({ ...input, fromType: "agent", fromAgent, scopeAgent: null }); persistAgents(); return json(response, 201, { message: item }); }
 		if (url.pathname === "/api/user/messages") { const blocked = policyError(null); if (blocked) throw blocked; const originAgentId = String(input.originAgentId || ""), scopeAgent = originAgentId ? requireOperationalAgent(clean(originAgentId, "originAgentId", 160)) : null; return json(response, 201, { message: appendMessage({ ...input, fromType: "user", fromAgent: null, scopeAgent, kind: input.kind || "steer" }) }); }
 		if (url.pathname === "/api/ack") { const id = clean(input.agentId, "agentId", 160), agent = requireOperationalAgent(id); agent.lastAck = Math.max(Number(agent.lastAck || 0), Number(input.messageId) || 0); agent.lastSeenAt = Date.now(); persistAgents(); return json(response, 200, { lastAck: agent.lastAck }); }
 		return error(response, 404, "NOT_FOUND", "Route not found");

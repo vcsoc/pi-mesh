@@ -1,1 +1,1 @@
-{"name":"pi-agent-mesh-local","private":true,"version":"2.3.0","type":"module","scripts":{"test":"node --test test/*.test.mjs","check":"node --check broker.mjs && node --check dashboard.js && node --check help.js && node --test test/*.test.mjs"}}
+{"name":"pi-agent-mesh-local","private":true,"version":"2.4.1","type":"module","scripts":{"test":"node --test test/*.test.mjs","check":"node --check broker.mjs && node --check dashboard.js && node --check help.js && node --test test/*.test.mjs"}}

@@ -1,17 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f5f6f4">
+  <meta name="theme-color" content="#101012">
   <title>Pi Agent Mesh</title>
   <link rel="stylesheet" href="/dashboard.css">
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><i>M</i><span><b>Agent Mesh</b><small>Local coordination</small></span></div>
-    <div class="thread-name"><span>Channel</span><b id="top-thread">All destinations</b><span id="top-message-count">· 0 messages</span></div>
+    <div class="thread-name"><span>View</span><b id="top-thread">All messages</b><span id="top-message-count">· 0 messages</span></div>
     <div class="top-actions">
       <span id="connection" class="connection offline">Connecting</span>
       <label class="auto-control mesh-global-control"><span>Mesh enabled</span><span class="switch"><input id="mesh-enabled" type="checkbox"><span class="slider"></span></span></label>
@@ -25,7 +25,12 @@
   </header>
 
   <div class="workspace">
-    <aside class="context">
+    <aside class="topology-panel" aria-label="Membership topology">
+      <header class="pane-heading"><b>Membership topology</b><button id="topology-toggle" aria-expanded="true" aria-controls="topology-body" title="Collapse topology">‹</button></header>
+      <div id="topology-body"><p class="topology-hint">Select a node to filter · select again to clear</p><div id="topology-canvas" aria-label="Channel and agent memberships"></div><div class="topology-legend"><span class="working">Working</span><span class="idle">Idle</span><span class="offline">Offline</span><span class="edge-legend">Solid link: active channel · dashed: joined only</span></div></div>
+    </aside>
+    <div id="topology-resizer" role="separator" tabindex="0" aria-label="Resize topology panel" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="700" aria-valuenow="340"></div>
+    <aside class="context" id="explorer-panel">
       <section class="context-panel channel-panel">
         <div class="section-title first"><span>Channels</span><span id="thread-count">0</span></div>
         <div id="threads" class="threads"></div>
@@ -37,12 +42,21 @@
       </section>
     </aside>
 
-    <main id="timeline-main" class="timeline-main">
-      <section id="messages" class="messages" aria-live="polite"></section>
-      <div class="latest"><span id="latest-label">No messages yet</span></div>
+    <main class="message-workspace">
+      <div id="message-tabs" class="tabbar" role="tablist" aria-label="Workspace tabs"></div>
+      <section id="matrix-panel" class="matrix-panel" role="tabpanel" aria-label="Membership matrix" hidden></section>
+      <div id="timeline-main" class="timeline-main" role="tabpanel" aria-label="Messages">
+        <section id="messages" class="messages" aria-live="polite"></section>
+        <div class="latest"><span id="latest-label">No messages yet</span></div>
+      </div>
     </main>
 
     <aside class="intervention">
+      <div id="inspector-tabs" class="tabbar" role="tablist" aria-label="Inspector tabs">
+        <button id="explorer-tab" role="tab" aria-selected="true" aria-controls="explorer-panel" data-inspector="explorer-panel">Explorer</button>
+        <button id="controls-tab" role="tab" aria-selected="false" aria-controls="controls-panel" data-inspector="controls-panel" tabindex="-1">Intervene &amp; manage</button>
+      </div>
+      <div id="controls-panel" role="tabpanel" aria-labelledby="controls-tab" hidden>
       <section class="compose mesh-controls" aria-labelledby="mesh-controls-title">
         <div class="compose-head"><b id="mesh-controls-title">Mesh controls</b><span>runtime policy</span></div>
         <div class="project-control">
@@ -72,8 +86,10 @@
         <output id="membership-status" role="status"></output>
       </form>
       <datalist id="channel-options"></datalist>
+      </div>
     </aside>
   </div>
+  <footer class="statusbar"><span>Pi Agent Mesh · Local coordination</span><a href="https://github.com/vcsoc" target="_blank" rel="noopener noreferrer">Developed by Chris Visser</a><span id="filter-status">All messages</span></footer>
   <div id="context-menu" class="context-menu" role="menu" hidden></div>
   <script src="/dashboard.js" defer></script>
 </body>
