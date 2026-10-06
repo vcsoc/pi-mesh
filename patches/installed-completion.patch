@@ -1,0 +1,56 @@
+--- a/index.ts
++++ b/index.ts
+@@ -253,6 +253,7 @@
+ 			return current.ui.notify(result.checks.map(check=>`${check.status} ${check.name}: ${check.detail}`).join('\n'),result.ok?'info':'warning');
+ 		}
+ 		if (command?.toLowerCase() === 'jobs') return await workCommand(raw.slice(4).trim(), current);
++        if (['steer','pause','continue','stop'].includes(command?.toLowerCase())) return await workCommand(raw,current);
+ 		if (command?.toLowerCase() === 'team') {
+ 			return await workCommand('team '+raw.slice(4).trim(), current);
+ 		}
+--- a/work.ts
++++ b/work.ts
+@@ -14,12 +14,16 @@
+ import { simpleTeam, simpleProposal } from './simple-team.ts';
+ import { compileScopedWorkflow } from './team-scope.mjs';
+ import { createRunStatus } from './run-status.mjs';
++import {completionReport,runControlRequest} from './completion.mjs';
+ import { mergeWorkspaces, cleanupWorkspace, preflightWorkspace } from './workspace.mjs';
+ 
+ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, available: () => Promise<void>, connection: () => { base: string; token: string }) {
+  const foreground=new Set<string>();
+  const editAgain=Symbol('edit-again');
+- const status=createRunStatus({directory:getDirectory,projectOf:(ctx:any)=>canonicalProject(ctx.cwd),list:listRuns,read:readRun});
++ const status=createRunStatus({directory:getDirectory,projectOf:(ctx:any)=>canonicalProject(ctx.cwd),list:listRuns,read:readRun,onFinish:(run:any)=>{
++  const spec=readJSON(join(runDirectory(getDirectory(),run.id),'spec.json'));
++  pi.sendMessage?.({customType:'mesh-result',content:completionReport(run,runVerification(run,spec)),display:true},{triggerTurn:false});
++ }});
+  pi.on('session_start',async(_event,ctx)=>status.start(ctx));
+  pi.on('session_switch',async(_event,ctx)=>status.start(ctx));
+  const profiles=(ctx:any)=>loadProfiles(getAgentDir(),canonicalProject(ctx.cwd));
+@@ -130,6 +134,7 @@
+    const goal=raw.slice(4).trim()||await ctx.ui.editor('What should Mesh do?','');
+    if(!goal?.trim())return ctx.ui.notify('Cancelled — no work started','info');
+    let draft=simpleProposal(teamWorkRequest,goal);
++   for(const stage of draft.definition.stages)for(const task of stage.tasks)task.model=`${ctx.model.provider}/${ctx.model.id}`;
+    for(;;) {
+     const catalog=(await ctx.modelRegistry.getAvailable()).map((m:any)=>`${m.provider}/${m.id}`),roleProfiles=profiles(ctx),currentModel=`${ctx.model.provider}/${ctx.model.id}`;
+     const validate=(definition:any)=>compileScopedWorkflow(definition,roleProfiles,{activeTools:pi.getActiveTools(),currentModel,availableModels:catalog,agentDir:getAgentDir()});
+@@ -139,7 +144,7 @@
+     try {
+      const result=await operate(draft,ctx,undefined,true,edited.approval);
+      if(result===editAgain)continue;
+-     return ctx.ui.notify(`Mesh run ${result.id}: ${result.state}. Runtime completion and acceptance are separate; use /mesh jobs to inspect.`,'info');
++     return ctx.ui.notify(`Mesh ${result.id}: launched (${result.state}), not completed. Footer tracks progress; a result/blocker report follows. To steer this run: /mesh jobs steer ${result.id} <instruction>. Parent Pi queued steering does not target this run.`,'info');
+     } catch(error:any) {
+      if(error.message.startsWith('Approval cancelled'))return ctx.ui.notify(error.message,'info');
+      ctx.ui.notify(error.message,'error');return;
+@@ -147,7 +152,7 @@
+    }
+   }
+   if(raw==='help')return ctx.ui.notify('Mesh jobs: team <request> (interactive editor) | review [task] | scout [task] | profiles | models | list | workflows | missions | JSON action. Review/scout show the exact scope for interactive approval before any worker starts. Example: /mesh jobs review Check this diff for correctness and tests. See ORCHESTRATION.md for advanced workflows.','info');
+-  const input=/^team(?:\s|$)/i.test(raw)?teamWorkRequest(raw.slice(4)):quickWorkRequest(raw)??(raw.startsWith('{')?JSON.parse(raw):{action:raw});
++  const input=runControlRequest(raw)??quickWorkRequest(raw)??(raw.startsWith('{')?JSON.parse(raw):{action:raw});
+   const result=await operate(input,ctx);ctx.ui.notify(JSON.stringify(result,null,2).slice(-16000),'info');
+  };
+ }

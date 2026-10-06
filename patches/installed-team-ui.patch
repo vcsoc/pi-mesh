@@ -1,0 +1,71 @@
+--- a/work.ts
++++ b/work.ts
+@@ -9,15 +9,17 @@
+ import { roleMemory } from './context-memory.mjs';
+ import { quickWorkRequest } from './quick-work.mjs';
+ import { teamWorkRequest } from './team-work.mjs';
++import { editTeamRequest, reviewWork } from './work-tui.ts';
+ import { mergeWorkspaces, cleanupWorkspace, preflightWorkspace } from './workspace.mjs';
+ 
+ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, available: () => Promise<void>, connection: () => { base: string; token: string }) {
+  const foreground=new Set<string>();
++ const editAgain=Symbol('edit-again');
+  const profiles=(ctx:any)=>loadProfiles(getAgentDir(),canonicalProject(ctx.cwd));
+  async function approve(ctx:any,title:string,description:string,signal?:AbortSignal) {
+   if(!ctx.hasUI||!await ctx.ui.confirm(title,description,{signal}))throw new Error('Explicit interactive approval is required');
+  }
+- async function operate(params:any,ctx:any,signal?:AbortSignal) {
++ async function operate(params:any,ctx:any,signal?:AbortSignal,allowBack=false):Promise<any> {
+   const directory=getDirectory(),project=canonicalProject(ctx.cwd),action=params.action||'list';
+   const own=(id:string)=>{const run=readRun(directory,id);if(run.project!==project)throw new Error('Run belongs to another project');return run};
+   if(action==='profiles')return profiles(ctx);
+@@ -80,12 +82,16 @@
+   if(spec.plan.stages.some(s=>s.tasks.some(t=>t.acceptance.some(g=>g.type==='command')))&&!pi.getActiveTools().includes('bash'))throw new Error('Host command gates require the parent bash capability');
+   if(spec.missionId&&!listMissions(directory,project).some(m=>m.id===spec.missionId&&m.status==='open'))throw new Error('Choose an open mission in this project');
+   spec.parentId=ctx.sessionManager.getSessionId();spec.policyDirectory=directory;spec.mesh=connection();
+-  const summary={project,isolation:spec.plan.isolation,background:params.background===true,schedule:spec.plan.schedule,continuation:{untilComplete:spec.plan.untilComplete===true,unlimitedSpending:spec.plan.maxCost===null,interventions:'cancel active operation, process first, then resume',failurePolicy:'pause after three failed acceptance passes'},limits:{concurrency:spec.plan.concurrency,spawns:spec.plan.maxCalls,tokens:spec.plan.maxTokens,estimatedCost:spec.plan.maxCost,costApprovalBase:spec.costApprovalBase||0,childDeadlineMs:spec.plan.timeoutMs},steps:spec.plan.stages.map(s=>({parallel:s.parallel,retries:s.retries,when:s.when,tasks:s.tasks.map(t=>({id:t.id,role:t.profile,lane:t.lane,model:t.model,tools:t.tools,extensions:t.extensions,extensionTools:t.extensionTools,task:t.task,acceptance:t.acceptance}))}))};
++  const summary={project,isolation:spec.plan.isolation,context:spec.plan.context,thinkingLevel:spec.thinkingLevel,background:params.background===true,schedule:spec.plan.schedule,continuation:{untilComplete:spec.plan.untilComplete===true,unlimitedSpending:spec.plan.maxCost===null,interventions:'cancel active operation, process first, then resume',failurePolicy:'pause after three failed acceptance passes'},limits:{concurrency:spec.plan.concurrency,spawns:spec.plan.maxCalls,tokens:spec.plan.maxTokens,estimatedCost:spec.plan.maxCost,costApprovalBase:spec.costApprovalBase||0,childDeadlineMs:spec.plan.timeoutMs},steps:spec.plan.stages.map(s=>({parallel:s.parallel,retries:s.retries,when:s.when,tasks:s.tasks.map(t=>({id:t.id,role:t.profile,lane:t.lane,model:t.model,tools:t.tools,extensions:t.extensions,extensionTools:t.extensionTools,task:t.task,prompt:t.prompt,acceptance:t.acceptance}))}))};
+   if(action==='preview')return summary;
+   if(spec.plan.isolation==='worktree'&&spec.plan.stages.some(s=>s.tasks.some(t=>t.write&&!spec.resumeWorkspaces?.some(w=>w.lane===t.lane))))await preflightWorkspace(spec.cwd);
+-  await approve(ctx,'Authorize Mesh workflow?',`${JSON.stringify(summary,null,2)}\n${spec.plan.untilComplete?'COMPLETION-DRIVEN APPROVAL: token/time/spawn limits are checkpoints, not total run ceilings. Automatic continuation, compaction and acceptance repair are approved until gates pass or you stop. '+(spec.plan.maxCost===null?'NO TOTAL SPENDING CEILING: model quota/cost may accumulate indefinitely.':'Spending ceiling pauses for a new approved grant.')+' Repeated failures pause for user input.':''}\nStandalone child tool scopes are listed above; parent extension permission hooks are NOT inherited. Workers/command gates can modify files and use model quota. Selected installed extensions execute code with your OS permissions and may add tools beyond the listed built-in ceiling; no extension is installed/downloaded by Mesh. No automatic commit/push. Recurring schedules persist while this machine is awake.`,signal);
+-  if(signal?.aborted)throw new Error('Approval cancelled');
++  const decision=await reviewWork(ctx,summary,signal,allowBack);
++  if(decision==='back'&&allowBack)return editAgain;
++  if(decision!=='approve'||signal?.aborted)throw new Error('Approval cancelled — no work started');
+   await available();
++  const stillAvailable=(await ctx.modelRegistry.getAvailable()).map((m:any)=>`${m.provider}/${m.id}`),ceiling=toolCeiling(pi.getActiveTools());
++  if(spec.plan.stages.some(s=>s.tasks.some(t=>!stillAvailable.includes(t.model)||t.tools.some(tool=>!ceiling.has(tool)))))throw new Error('Model/tool availability changed during review; open a new review. No work started.');
++  if(signal?.aborted)throw new Error('Approval cancelled — no work started');
+   const run=launchRun(directory,spec);
+   if(params.background===true)return run;
+   foreground.add(run.id);
+@@ -102,7 +108,28 @@
+  pi.on('session_shutdown',async()=>{for(const id of foreground)try{enqueueControl(getDirectory(),id,'stop')}catch{}foreground.clear();});
+  return async(args:string,ctx:any)=>{
+   const raw=args.trim()||'list';
+-  if(raw==='help')return ctx.ui.notify('Mesh jobs: team <request> | review [task] | scout [task] | profiles | models | list | workflows | missions | JSON action. Review/scout show the exact scope for interactive approval before any worker starts. Example: /mesh jobs review Check this diff for correctness and tests. See ORCHESTRATION.md for advanced workflows.','info');
++  if(/^team(?:\s|$)/i.test(raw)) {
++   if(ctx.mode!=='tui')throw new Error('/mesh team requires interactive Pi TUI mode. No work was started.');
++   if(process.env.PI_MESH_CHILD)throw new Error('Nested delegation is disabled');
++   if(!ctx.model)throw new Error('Select a model before configuring a team');
++   let draft=teamWorkRequest(raw.slice(4));
++   for(;;) {
++    const catalog=(await ctx.modelRegistry.getAvailable()).map((m:any)=>`${m.provider}/${m.id}`),roleProfiles=profiles(ctx),currentModel=`${ctx.model.provider}/${ctx.model.id}`;
++    const validate=(definition:any)=>compileWorkflow(definition,roleProfiles,{activeTools:pi.getActiveTools(),currentModel,availableModels:catalog,agentDir:getAgentDir()});
++    const edited=await editTeamRequest(ctx,draft,{profiles:roleProfiles,models:catalog,currentModel,validate,preflight:async(definition:any)=>{const plan=validate(definition);if(plan.isolation==='worktree'&&plan.stages.some(s=>s.tasks.some(t=>t.write)))await preflightWorkspace(ctx.cwd);}});
++    if(!edited)return ctx.ui.notify('Team cancelled — no work started','info');
++    draft=edited;
++    try {
++     const result=await operate(draft,ctx,undefined,true);
++     if(result===editAgain)continue;
++     return ctx.ui.notify(`Mesh run ${result.id}: ${result.state}. Runtime completion and acceptance are separate; use /mesh jobs to inspect.`,'info');
++    } catch(error:any) {
++     if(error.message.startsWith('Approval cancelled'))return ctx.ui.notify(error.message,'info');
++     ctx.ui.notify(error.message,'error');return;
++    }
++   }
++  }
++  if(raw==='help')return ctx.ui.notify('Mesh jobs: team <request> (interactive editor) | review [task] | scout [task] | profiles | models | list | workflows | missions | JSON action. Review/scout show the exact scope for interactive approval before any worker starts. Example: /mesh jobs review Check this diff for correctness and tests. See ORCHESTRATION.md for advanced workflows.','info');
+   const input=/^team(?:\s|$)/i.test(raw)?teamWorkRequest(raw.slice(4)):quickWorkRequest(raw)??(raw.startsWith('{')?JSON.parse(raw):{action:raw});
+   const result=await operate(input,ctx);ctx.ui.notify(JSON.stringify(result,null,2).slice(-16000),'info');
+  };

@@ -7,6 +7,8 @@
   <meta name="theme-color" content="#101012">
   <title>Pi Agent Mesh</title>
   <link rel="stylesheet" href="/dashboard.css">
+  <link rel="stylesheet" href="/management-workbench.css">
+  <script type="module" src="/management-workbench.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -17,9 +19,11 @@
       <label class="auto-control mesh-global-control"><span>Mesh enabled</span><span class="switch"><input id="mesh-enabled" type="checkbox"><span class="slider"></span></span></label>
       <label class="auto-control"><span>Auto-scroll latest</span><span class="switch"><input id="auto-scroll" type="checkbox" checked><span class="slider"></span></span></label>
       <div class="font-scale" aria-label="Message text size"><span>Message text</span><button id="font-down" type="button" aria-label="Decrease message text size">−</button><output id="font-level">100%</output><button id="font-up" type="button" aria-label="Increase message text size">+</button></div>
-      <button id="jump-latest" type="button">Jump to latest</button>
-      <button id="theme-toggle" type="button">Dark</button>
-      <a href="/help">Help</a>
+      <button id="jump-latest" class="icon-button" type="button" title="Jump to latest message" aria-label="Jump to latest message">⤓</button>
+      <button id="theme-toggle" class="icon-button" type="button" title="Switch theme" aria-label="Switch theme">☀</button>
+      <div class="layout-shortcuts" role="group" aria-label="Workspace layout"><button id="view-topology" type="button" title="Topology only (Alt+T)" aria-label="Topology only (Alt+T)">◉</button><button id="view-messages" type="button" title="Messages only (Alt+M)" aria-label="Messages only (Alt+M)">▤</button><button id="view-reset" type="button" title="Show all panels (Alt+R)" aria-label="Show all panels (Alt+R)">▥</button></div>
+      <button id="agent-settings-open" type="button">Agent settings</button>
+      <button id="help-tour" type="button" aria-haspopup="dialog">Help</button>
       <a href="/api/export">Export</a>
     </div>
   </header>
@@ -27,7 +31,7 @@
   <div class="workspace">
     <aside class="topology-panel" aria-label="Membership topology">
       <header class="pane-heading"><b>Membership topology</b><button id="topology-toggle" aria-expanded="true" aria-controls="topology-body" title="Collapse topology">‹</button></header>
-      <div id="topology-body"><p class="topology-hint">Select a node to filter · select again to clear</p><div id="topology-canvas" aria-label="Channel and agent memberships"></div><div class="topology-legend"><span class="working">Working</span><span class="idle">Idle</span><span class="offline">Offline</span><span class="edge-legend">Solid link: active channel · dashed: joined only</span></div></div>
+      <div id="topology-body"><div class="topology-tools"><label class="sr-only" for="topology-layout">Topology layout</label><select id="topology-layout" aria-label="Topology layout"><option value="spatial">Spatial</option><option value="structured">Structured</option><option value="orbital">Orbital</option></select><button id="topology-overview" type="button" title="Return to the channel overview" hidden>← Overview</button><button id="topology-orbit-toggle" type="button" title="Pause orbital animation" aria-label="Pause orbital animation" aria-pressed="true" hidden>Ⅱ</button><div role="group" aria-label="Topology zoom"><button id="topology-zoom-in" type="button" title="Zoom in" aria-label="Zoom in topology">+</button><button id="topology-fit" type="button" title="Fit all nodes" aria-pressed="true">Fit</button><button id="topology-zoom-out" type="button" title="Zoom out" aria-label="Zoom out topology">−</button></div></div><p id="topology-system-label" class="topology-system-label" hidden></p><label class="topology-search"><span class="sr-only">Search topology</span><input id="topology-search" type="search" placeholder="Find an agent or channel…" aria-label="Search topology and highlight connections" autocomplete="off"></label><p id="topology-mode-hint" class="topology-mode-hint">Drag empty space to pan · scroll to zoom</p><div id="topology-canvas" tabindex="0" aria-label="Channel and agent memberships. Drag to pan, scroll to zoom. In orbital view, arrow keys rotate the solar system."></div><div class="topology-legend"><span class="working">Working</span><span class="idle">Idle</span><span class="offline">Offline</span><span class="edge-legend">Solid link: active channel · dashed: joined only</span></div></div>
     </aside>
     <div id="topology-resizer" role="separator" tabindex="0" aria-label="Resize topology panel" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="700" aria-valuenow="340"></div>
     <aside class="context" id="explorer-panel">
@@ -45,6 +49,26 @@
     <main class="message-workspace">
       <div id="message-tabs" class="tabbar" role="tablist" aria-label="Workspace tabs"></div>
       <section id="matrix-panel" class="matrix-panel" role="tabpanel" aria-label="Membership matrix" hidden></section>
+      <section id="fleet-panel" class="fleet-panel" role="tabpanel" aria-label="Work fleet" hidden>
+        <h2>Work fleet</h2><p>Approved detached workflows. Use /mesh jobs in Pi to launch, resume, merge or manage missions.</p>
+        <label>Project <select id="fleet-project"><option value="">All projects</option></select></label>
+        <output id="fleet-status" role="status"></output><div id="fleet-runs"></div>
+        <section id="fleet-detail" hidden><h3 id="fleet-title"></h3>
+          <div class="fleet-controls"><button data-fleet-action="stop" type="button">Stop</button><button data-fleet-action="pause" type="button">Pause between steps</button><button data-fleet-action="continue" type="button">Continue</button></div>
+          <label>User steering<textarea id="fleet-steering" maxlength="12000" rows="3"></textarea></label><button id="fleet-steer" type="button">Send steering</button>
+          <pre id="fleet-evidence"></pre>
+        </section>
+      </section>
+      <section id="agent-config-panel" class="agent-config-panel" role="tabpanel" aria-label="Configure selected agent" hidden>
+        <h2 id="agent-config-title">Configure agent</h2><p id="agent-config-info" class="muted"></p>
+        <label>Target agent<select id="agent-config-target" aria-label="Target agent"></select></label>
+        <form id="agent-config-form"><label>Provider<select id="agent-config-provider" aria-label="Provider"></select></label><label>Model (exact provider/model ID)<input id="agent-config-model" type="text" list="agent-config-models" maxlength="300" autocomplete="off" placeholder="provider/model-id" required></label><datalist id="agent-config-models"></datalist>
+          <p id="agent-config-error" role="alert"></p><button id="agent-config-reload" type="button">Reload target catalog</button>
+          <label>Thinking level<select id="agent-config-thinking"><option value="">Keep current thinking level</option></select></label>
+          <label><input id="agent-config-reviewed" type="checkbox" required> I reviewed this target/model choice. Sending queues a request; only target acknowledgment means applied.</label>
+          <button class="send" type="submit">Request configuration</button><output id="agent-config-status" role="status"></output>
+        </form><p class="muted">Changes are applied by the target Pi session when idle. This does not change defaults for new sessions or an approved running child job.</p>
+      </section>
       <div id="timeline-main" class="timeline-main" role="tabpanel" aria-label="Messages">
         <section id="messages" class="messages" aria-live="polite"></section>
         <div class="latest"><span id="latest-label">No messages yet</span></div>
@@ -52,7 +76,8 @@
     </main>
 
     <aside class="intervention">
-      <div id="inspector-tabs" class="tabbar" role="tablist" aria-label="Inspector tabs">
+      <div class="inspector-heading"><button id="inspector-toggle" type="button" aria-expanded="true" aria-controls="inspector-body" title="Collapse right panel">›</button><span>Inspector</span></div>
+      <div id="inspector-body"><div id="inspector-tabs" class="tabbar" role="tablist" aria-label="Inspector tabs">
         <button id="explorer-tab" role="tab" aria-selected="true" aria-controls="explorer-panel" data-inspector="explorer-panel">Explorer</button>
         <button id="controls-tab" role="tab" aria-selected="false" aria-controls="controls-panel" data-inspector="controls-panel" tabindex="-1">Intervene &amp; manage</button>
       </div>
@@ -72,13 +97,14 @@
       </section>
       <form id="composer" class="compose">
         <div class="compose-head"><b>Intervene</b><span>direct user steering</span></div>
+        <label id="selected-recipients-label" hidden>Selected agents (⌘/Ctrl-click for multiple)<select id="selected-recipients" multiple size="5"></select></label>
         <div class="fields"><label>To<select id="to" required><option value="*">All agents</option></select></label><label>Intent<select id="kind"><option value="steer">Steer</option><option value="task">Task</option><option value="question">Question</option><option value="decision">Decision</option><option value="plan">Plan</option><option value="message">Message</option></select></label></div>
         <label>Message<textarea id="content" maxlength="20000" rows="8" required placeholder="Add direction without losing context…"></textarea></label>
         <p class="key-hint"><kbd>Enter</kbd> sends · <kbd>Shift</kbd>+<kbd>Enter</kbd> or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> adds a new line</p>
         <button class="send" type="submit">Send intervention</button><output id="composer-status" role="status"></output>
       </form>
       <form id="membership" class="compose membership">
-        <div class="compose-head"><b>Membership</b><span>manage selected agent</span></div>
+        <div class="compose-head"><b>Agent access</b><span>channels &amp; connection</span></div>
         <label>Agent<select id="member-agent" required></select></label>
         <label>Channel<input id="member-channel" maxlength="64" placeholder="channel-name" list="channel-options" required></label>
         <div class="fields"><button id="join-channel" class="send" type="button">Join channel</button><button id="leave-channel" type="button">Kick from channel</button></div>
@@ -86,11 +112,22 @@
         <output id="membership-status" role="status"></output>
       </form>
       <datalist id="channel-options"></datalist>
-      </div>
+      </div></div>
     </aside>
   </div>
   <footer class="statusbar"><span>Pi Agent Mesh · Local coordination</span><a href="https://github.com/vcsoc" target="_blank" rel="noopener noreferrer">Developed by Chris Visser</a><span id="filter-status">All messages</span></footer>
   <div id="context-menu" class="context-menu" role="menu" hidden></div>
+  <dialog id="mesh-tour" aria-labelledby="tour-title" aria-describedby="tour-description">
+    <div id="tour-highlight" aria-hidden="true"></div>
+    <section id="tour-card">
+      <div id="tour-progress" aria-live="polite"></div>
+      <h2 id="tour-title" tabindex="-1"></h2>
+      <p id="tour-description"></p>
+      <p class="tour-hint">← / → to navigate · Esc to exit · Preview only—no messages or policies are changed.</p>
+      <nav aria-label="Walkthrough navigation"><button id="tour-exit" type="button">Exit</button><button id="tour-previous" type="button">Previous</button><button id="tour-next" type="button">Next</button></nav>
+    </section>
+  </dialog>
   <script src="/dashboard.js" defer></script>
+  <script src="/fleet-panel.js" defer></script>
 </body>
 </html>

@@ -1,0 +1,2 @@
+# Historical unified diffs must retain literal context whitespace.
+*.patch -whitespace

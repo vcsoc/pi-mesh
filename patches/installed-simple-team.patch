@@ -1,0 +1,127 @@
+--- a/index.ts
++++ b/index.ts
+@@ -241,10 +241,11 @@
+ 	const openMeshPage = async (action: "dashboard" | "help", current: ExtensionContext) => { try { await broker(); } catch (cause) { let live = await probe(1000); for (let attempt = 0; attempt < 4 && !live?.ok; attempt++) { await new Promise((done) => setTimeout(done, 250)); live = await probe(1000); } if (!live?.ok || live.instance !== fingerprint()) throw cause; } const authPath = action === "help" ? "/auth/help" : "/auth"; open(`${base()}${authPath}?token=${encodeURIComponent(config!.token)}`); current.ui.notify(action === "help" ? "Opened Agent Mesh documentation" : `Opened ${base()}`, "info"); };
+ 
+ 	const workCommand = registerWork(pi, () => config!.dataDir, async () => { assertAvailable(); await syncAgent(); }, () => ({base:base(),token:config!.token}));
+-	pi.registerCommand("mesh", { description: "Open Agent Mesh; manage roles, channels and durable jobs", getArgumentCompletions: (prefix) => { const value = prefix.trimStart().toLowerCase(); const items = [{ value: "role", label: "role · set role and project-based name" }, { value: "jobs", label: "jobs · role profiles, delegation and job control" }, { value: "team", label: "team · completion-driven team for your request" }, { value: "doctor", label: "doctor · read-only setup and failure checks" }, { value: "configure", label: "configure · choose a participant model and thinking level" }, { value: "dashboard", label: "dashboard" }, { value: "help", label: "help" }, { value: "version", label: "version" }, { value: "name", label: "name" }, { value: "agents", label: "agents" }, { value: "channels", label: "channels" }, { value: "join", label: "join" }, { value: "switch", label: "switch" }, { value: "leave", label: "leave" }, { value: "on", label: "on" }, { value: "off", label: "off" }, { value: "rejoin", label: "rejoin" }, { value: "@", label: "@<agent>" }, { value: "#", label: "#<channel>" }].filter((item) => item.value.startsWith(value)); return items.length ? items : null; }, handler: async (args, current) => {
++	pi.registerCommand("mesh", { description: "Configure a team in Pi: change settings, cancel, or accept", getArgumentCompletions: (prefix) => { const value = prefix.trimStart().toLowerCase(); const items = [{ value: "role", label: "role · set role and project-based name" }, { value: "jobs", label: "jobs · role profiles, delegation and job control" }, { value: "team", label: "team · completion-driven team for your request" }, { value: "doctor", label: "doctor · read-only setup and failure checks" }, { value: "configure", label: "configure · choose a participant model and thinking level" }, { value: "dashboard", label: "dashboard" }, { value: "help", label: "help" }, { value: "version", label: "version" }, { value: "name", label: "name" }, { value: "agents", label: "agents" }, { value: "channels", label: "channels" }, { value: "join", label: "join" }, { value: "switch", label: "switch" }, { value: "leave", label: "leave" }, { value: "on", label: "on" }, { value: "off", label: "off" }, { value: "rejoin", label: "rejoin" }, { value: "@", label: "@<agent>" }, { value: "#", label: "#<channel>" }].filter((item) => value ? item.value.startsWith(value) : ['team','jobs','dashboard','help'].includes(item.value)); return items.length ? items : null; }, handler: async (args, current) => {
+ 		try {
+ 		const raw = args.trim(), lowered = raw.toLowerCase(), [command, ...rest] = raw.split(/\s+/);
+-		if (!raw || lowered === "dashboard") return await openMeshPage("dashboard", current);
++		if (!raw) return await workCommand('team', current);
++		if (lowered === "dashboard") return await openMeshPage("dashboard", current);
+ 		if (lowered === "help") return await openMeshPage("help", current);
+ 		if (lowered === "version") return current.ui.notify(`Agent Mesh v${VERSION}`, "info");
+ 		if (lowered === 'doctor') {
+@@ -253,7 +254,6 @@
+ 		}
+ 		if (command?.toLowerCase() === 'jobs') return await workCommand(raw.slice(4).trim(), current);
+ 		if (command?.toLowerCase() === 'team') {
+-			if(!rest.join(' ').trim())return current.ui.notify('Usage: /mesh team <request> — previews a scoped team for your approval', 'warning');
+ 			return await workCommand('team '+raw.slice(4).trim(), current);
+ 		}
+ 		if (!agent && !removed && !unavailableCode) { await register(current); startTimers(); }
+--- a/work.ts
++++ b/work.ts
+@@ -2,24 +2,32 @@
+ import { Type } from 'typebox';
+ import { StringEnum } from '@earendil-works/pi-ai';
+ import { existsSync } from 'node:fs';
++import { createHash } from 'node:crypto';
+ import { join } from 'node:path';
+-import { loadProfiles, savedWorkflows, compileWorkflow, forkContext, toolCeiling } from './workflow.mjs';
++import { loadProfiles, savedWorkflows, forkContext, toolCeiling } from './workflow.mjs';
+ import { launchRun, waitRun, canonicalProject, projectHash, resumeSpecification, integrationEvidence, runVerification, updateMission, listMissions, runEvents } from './fleet.mjs';
+ import { readRun, listRuns, runDirectory, enqueueControl, controlReceipt, terminal, atomicJSON, readJSON, storeLock, ownsLiveProcess } from './fleet-store.mjs';
+ import { roleMemory } from './context-memory.mjs';
+ import { quickWorkRequest } from './quick-work.mjs';
+ import { teamWorkRequest } from './team-work.mjs';
+-import { editTeamRequest, reviewWork } from './work-tui.ts';
++import { reviewWork } from './work-tui.ts';
++import { simpleTeam, simpleProposal } from './simple-team.ts';
++import { compileScopedWorkflow } from './team-scope.mjs';
++import { createRunStatus } from './run-status.mjs';
+ import { mergeWorkspaces, cleanupWorkspace, preflightWorkspace } from './workspace.mjs';
+ 
+ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, available: () => Promise<void>, connection: () => { base: string; token: string }) {
+  const foreground=new Set<string>();
+  const editAgain=Symbol('edit-again');
++ const status=createRunStatus({directory:getDirectory,projectOf:(ctx:any)=>canonicalProject(ctx.cwd),list:listRuns,read:readRun});
++ pi.on('session_start',async(_event,ctx)=>status.start(ctx));
++ pi.on('session_switch',async(_event,ctx)=>status.start(ctx));
+  const profiles=(ctx:any)=>loadProfiles(getAgentDir(),canonicalProject(ctx.cwd));
+  async function approve(ctx:any,title:string,description:string,signal?:AbortSignal) {
+   if(!ctx.hasUI||!await ctx.ui.confirm(title,description,{signal}))throw new Error('Explicit interactive approval is required');
+  }
+- async function operate(params:any,ctx:any,signal?:AbortSignal,allowBack=false):Promise<any> {
++ async function operate(params:any,ctx:any,signal?:AbortSignal,allowBack=false,approvedSummary?:string):Promise<any> {
++  status.start(ctx);
+   const directory=getDirectory(),project=canonicalProject(ctx.cwd),action=params.action||'list';
+   const own=(id:string)=>{const run=readRun(directory,id);if(run.project!==project)throw new Error('Run belongs to another project');return run};
+   if(action==='profiles')return profiles(ctx);
+@@ -76,16 +84,22 @@
+     if(!availableModels.includes(t.model)||t.tools.some((tool:string)=>!toolCeiling(pi.getActiveTools()).has(tool)))throw new Error('Resume exceeds current model/tool availability');
+    }
+   } else {
+-   const plan=compileWorkflow(definition,profiles(ctx),{activeTools:pi.getActiveTools(),currentModel,availableModels,agentDir:getAgentDir()});
++   const plan=compileScopedWorkflow(definition,profiles(ctx),{activeTools:pi.getActiveTools(),currentModel,availableModels,agentDir:getAgentDir()});
+    spec={plan,cwd:ctx.cwd,project,projectHash:projectHash(project),systemPrompt:ctx.getSystemPrompt(),thinkingLevel:ctx.thinkingLevel||pi.getThinkingLevel(),sdkFile:join(getPackageDir(),'dist','index.js'),agentDir:getAgentDir(),forkContext:plan.context==='fork'?forkContext(ctx.sessionManager.buildContextEntries()):'',missionId:params.missionId||definition.missionId};
+   }
+   if(spec.plan.stages.some(s=>s.tasks.some(t=>t.acceptance.some(g=>g.type==='command')))&&!pi.getActiveTools().includes('bash'))throw new Error('Host command gates require the parent bash capability');
+   if(spec.missionId&&!listMissions(directory,project).some(m=>m.id===spec.missionId&&m.status==='open'))throw new Error('Choose an open mission in this project');
+   spec.parentId=ctx.sessionManager.getSessionId();spec.policyDirectory=directory;spec.mesh=connection();
+-  const summary={project,isolation:spec.plan.isolation,context:spec.plan.context,thinkingLevel:spec.thinkingLevel,background:params.background===true,schedule:spec.plan.schedule,continuation:{untilComplete:spec.plan.untilComplete===true,unlimitedSpending:spec.plan.maxCost===null,interventions:'cancel active operation, process first, then resume',failurePolicy:'pause after three failed acceptance passes'},limits:{concurrency:spec.plan.concurrency,spawns:spec.plan.maxCalls,tokens:spec.plan.maxTokens,estimatedCost:spec.plan.maxCost,costApprovalBase:spec.costApprovalBase||0,childDeadlineMs:spec.plan.timeoutMs},steps:spec.plan.stages.map(s=>({parallel:s.parallel,retries:s.retries,when:s.when,tasks:s.tasks.map(t=>({id:t.id,role:t.profile,lane:t.lane,model:t.model,tools:t.tools,extensions:t.extensions,extensionTools:t.extensionTools,task:t.task,prompt:t.prompt,acceptance:t.acceptance}))}))};
++  const summary={project,scope:spec.plan.scope||'custom',workingDirectory:spec.cwd,missionId:spec.missionId,planFingerprint:createHash('sha256').update(JSON.stringify(spec.plan)).digest('hex'),contextFingerprint:createHash('sha256').update(JSON.stringify([spec.systemPrompt,spec.forkContext||''])).digest('hex'),isolation:spec.plan.isolation,context:spec.plan.context,thinkingLevel:spec.thinkingLevel,background:params.background===true,schedule:spec.plan.schedule,continuation:{untilComplete:spec.plan.untilComplete===true,unlimitedSpending:spec.plan.maxCost===null,interventions:'cancel active operation, process first, then resume',failurePolicy:'pause after three failed acceptance passes'},limits:{concurrency:spec.plan.concurrency,spawns:spec.plan.maxCalls,tokens:spec.plan.maxTokens,estimatedCost:spec.plan.maxCost,costApprovalBase:spec.costApprovalBase||0,childDeadlineMs:spec.plan.timeoutMs},steps:spec.plan.stages.map(s=>({parallel:s.parallel,retries:s.retries,when:s.when,tasks:s.tasks.map(t=>({id:t.id,role:t.profile,lane:t.lane,model:t.model,write:t.write,tools:t.tools,extensions:t.extensions,extensionTools:t.extensionTools,task:t.task,prompt:t.prompt,acceptance:t.acceptance}))}))};
+   if(action==='preview')return summary;
+   if(spec.plan.isolation==='worktree'&&spec.plan.stages.some(s=>s.tasks.some(t=>t.write&&!spec.resumeWorkspaces?.some(w=>w.lane===t.lane))))await preflightWorkspace(spec.cwd);
+-  const decision=await reviewWork(ctx,summary,signal,allowBack);
++  // Only this command's private UI return can supply a grant; tool parameters cannot.
++  if(approvedSummary!==undefined&&approvedSummary!==JSON.stringify(summary)) {
++   ctx.ui.notify('The execution plan changed. Check the updated settings before accepting again.','warning');
++   if(allowBack)return editAgain;
++   throw new Error('Execution approval no longer matches the plan');
++  }
++  const decision=approvedSummary!==undefined?'approve':await reviewWork(ctx,summary,signal,allowBack);
+   if(decision==='back'&&allowBack)return editAgain;
+   if(decision!=='approve'||signal?.aborted)throw new Error('Approval cancelled — no work started');
+   await available();
+@@ -93,6 +107,7 @@
+   if(spec.plan.stages.some(s=>s.tasks.some(t=>!stillAvailable.includes(t.model)||t.tools.some(tool=>!ceiling.has(tool)))))throw new Error('Model/tool availability changed during review; open a new review. No work started.');
+   if(signal?.aborted)throw new Error('Approval cancelled — no work started');
+   const run=launchRun(directory,spec);
++  status.track(run,ctx);
+   if(params.background===true)return run;
+   foreground.add(run.id);
+   try{const finished=await waitRun(directory,run.id,{signal,onUpdate:state=>ctx.ui.setWidget('mesh-jobs',[`${state.id.slice(0,8)} · ${state.state} · ${state.steps.length} steps · ${state.usage.tokens} tokens`])});return {...finished,verification:runVerification(finished,spec)};}
+@@ -105,22 +120,24 @@
+   parameters:Type.Object({action:StringEnum(actions),id:Type.Optional(Type.String()),role:Type.Optional(Type.String()),workflow:Type.Optional(Type.String()),definition:Type.Optional(Type.Any({description:'Declarative workflow: tasks[{id?,profile,task,lane?,model?,extensions?:[installed agent-dir path],extensionTools?:[approved tool names],acceptance?}], mode sequence/parallel; or stages[{tasks,parallel?,retries?,when?}]. Optional isolation worktree/shared, schedule{at,everyMs,maxRuns}, untilComplete (explicit automatic checkpoint continuation), watchdog, concurrency, timeoutMs, maxCalls, maxTokens, maxCost (null permits unlimited spending only with untilComplete), context fresh/fork.'})),tasks:Type.Optional(Type.Array(Type.Object({profile:Type.String(),task:Type.String()}))),mode:Type.Optional(StringEnum(['sequence','parallel'] as const)),background:Type.Optional(Type.Boolean()),missionId:Type.Optional(Type.String()),message:Type.Optional(Type.String()),receipt:Type.Optional(Type.String()),lane:Type.Optional(Type.String()),discard:Type.Optional(Type.Boolean()),waitMs:Type.Optional(Type.Integer({minimum:1,maximum:300000}))}),
+   async execute(_id,params,signal,_update,ctx){const result=await operate(params,ctx,signal),text=JSON.stringify(result,null,2);return {content:[{type:'text',text:text.length<=48000?text:JSON.stringify({id:result.id,state:result.state,notice:'Output truncated; use inspect for the run and retained evidence files.',tail:text.slice(-16000)})}],details:{result}};},
+  });
+- pi.on('session_shutdown',async()=>{for(const id of foreground)try{enqueueControl(getDirectory(),id,'stop')}catch{}foreground.clear();});
++ pi.on('session_shutdown',async()=>{status.stop();for(const id of foreground)try{enqueueControl(getDirectory(),id,'stop')}catch{}foreground.clear();});
+  return async(args:string,ctx:any)=>{
+   const raw=args.trim()||'list';
+   if(/^team(?:\s|$)/i.test(raw)) {
+    if(ctx.mode!=='tui')throw new Error('/mesh team requires interactive Pi TUI mode. No work was started.');
+    if(process.env.PI_MESH_CHILD)throw new Error('Nested delegation is disabled');
+    if(!ctx.model)throw new Error('Select a model before configuring a team');
+-   let draft=teamWorkRequest(raw.slice(4));
++   const goal=raw.slice(4).trim()||await ctx.ui.editor('What should Mesh do?','');
++   if(!goal?.trim())return ctx.ui.notify('Cancelled — no work started','info');
++   let draft=simpleProposal(teamWorkRequest,goal);
+    for(;;) {
+     const catalog=(await ctx.modelRegistry.getAvailable()).map((m:any)=>`${m.provider}/${m.id}`),roleProfiles=profiles(ctx),currentModel=`${ctx.model.provider}/${ctx.model.id}`;
+-    const validate=(definition:any)=>compileWorkflow(definition,roleProfiles,{activeTools:pi.getActiveTools(),currentModel,availableModels:catalog,agentDir:getAgentDir()});
+-    const edited=await editTeamRequest(ctx,draft,{profiles:roleProfiles,models:catalog,currentModel,validate,preflight:async(definition:any)=>{const plan=validate(definition);if(plan.isolation==='worktree'&&plan.stages.some(s=>s.tasks.some(t=>t.write)))await preflightWorkspace(ctx.cwd);}});
++    const validate=(definition:any)=>compileScopedWorkflow(definition,roleProfiles,{activeTools:pi.getActiveTools(),currentModel,availableModels:catalog,agentDir:getAgentDir()});
++    const edited=await simpleTeam(ctx,draft,{factory:teamWorkRequest,profiles:roleProfiles,models:catalog,currentModel,validate,preview:(input:any)=>operate({...input,action:'preview'},ctx),preflight:async(definition:any)=>{const plan=validate(definition);if(plan.isolation==='worktree'&&plan.stages.some(s=>s.tasks.some(t=>t.write)))await preflightWorkspace(ctx.cwd);}});
+     if(!edited)return ctx.ui.notify('Team cancelled — no work started','info');
+-    draft=edited;
++    draft=edited.request;
+     try {
+-     const result=await operate(draft,ctx,undefined,true);
++     const result=await operate(draft,ctx,undefined,true,edited.approval);
+      if(result===editAgain)continue;
+      return ctx.ui.notify(`Mesh run ${result.id}: ${result.state}. Runtime completion and acceptance are separate; use /mesh jobs to inspect.`,'info');
+     } catch(error:any) {
