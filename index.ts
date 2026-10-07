@@ -297,8 +297,10 @@ export default function agentMesh(pi: ExtensionAPI) {
 		} catch (cause) { current.ui.notify(friendlyError(cause), "warning"); }
 	} });
 
-	pi.on('input',async(event,current)=>{
-		if(event.source!=='extension'&&event.text.trim()&&!event.text.trim().startsWith('/')){ctx=current;pauseOwnedRuns();if(!current.isIdle())current.abort();}
+	pi.on('input',async(_event,current)=>{
+		// Leave ordinary steering/follow-up input to Pi's native queue. Only
+		// explicit Mesh interventions and controls may interrupt active work.
+		ctx=current;
 		return {action:'continue' as const};
 	});
 	pi.on("before_agent_start", async (event) => {
