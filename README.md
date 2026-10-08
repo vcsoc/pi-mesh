@@ -1,6 +1,30 @@
-# Pi Agent Mesh v2.7.4
+# Pi Mesh
 
-## Token audit and AI gateway baseline — installed
+Mesh's **only maintained source** is [vcsoc/pi-mesh](https://github.com/vcsoc/pi-mesh). Pi installs a checkout of this repository; `mypi` no longer contains or supplies its runtime. Settings and history remain private on each machine.
+
+## Install and update
+
+Requires Git and Pi 1.0.4 or newer (Node 22.19+). Run on **each machine**:
+
+```sh
+pi install https://github.com/vcsoc/pi-mesh.git
+```
+
+After current work finishes, run `/reload` in every open Pi session. For subsequent updates:
+
+```sh
+pi update https://github.com/vcsoc/pi-mesh.git
+```
+
+Then `/reload` again. `pi list` shows the installed Git checkout. No manual copying, separate TypeScript build or npm publication is needed; Pi supplies its own SDK/TUI dependencies and compiles `index.ts` at load time. The package explicitly loads only that extension, not helper modules or tests.
+
+**Migrating from the old manual installation:** back up `~/.pi/agent/extensions/agent-mesh` and move it **outside** `~/.pi/agent/extensions` after installing the Git package, before reloading. If settings explicitly point to that old folder, remove only that old extension entry. Finish active Mesh jobs before moving/restarting the broker. Do **not** move/delete `~/.pi/agent-mesh`: it contains your settings, history, credentials and approved runs. Install/update does not synchronize or replay that state. Existing broker processes may still be using the old path; perform a verified, quiescent restart rather than killing active work.
+
+Developers clone this repository separately, make changes here and push to `main`; machines update their Pi-managed Git checkout with the command above. Do not edit installed checkouts or reintroduce a runtime copy in `mypi`.
+
+## Version 2.7.4
+
+## Token audit and AI gateway baseline
 
 New requests default to **no token ceiling** (`maxTokens: null`), with metadata audit on. Existing numeric grants retain their limits. Optional ceilings are selected in Advanced → Token budget; `unlimited` restores audit-only mode. New explicit limits are accounting hard stops, including automatic mode, while historic automatic grants retain their checkpoint semantics. Responses/in-flight calls can overshoot before usage is reported.
 
@@ -109,15 +133,24 @@ Click **Help** for an in-app, 16-step guided walkthrough. Highlighted regions ex
 
 Global Pi extension for named, observable communication between independent agents and sub-agents through public local channels.
 
-## Activation
+## Native prompt queuing (fix c1415c5)
 
-Install globally at:
+Ordinary Pi input is left to Pi's native queues: **Enter** steers after the current assistant response/tool batch, **Alt+Enter** follows up after the current task. It must not call `ctx.abort()` or pause owned Mesh workflows. **Escape**, an explicit RPC abort and intentional Mesh dashboard/run interventions remain cancellation controls.
 
-```text
-~/.pi/agent/extensions/agent-mesh/
+The fix is included in this Git package. Update using `pi update https://github.com/vcsoc/pi-mesh.git`, then run **`/reload` after current work finishes in each Pi session**. Pulling `mypi` or a separate development clone does not update Pi's managed checkout. Same version labels alone do not prove that an already-running session has loaded the fix. `npm run check` validates syntax plus real SDK/RPC and package registration.
+
+Regression coverage: `test/input-queue.test.mjs` checks the actual callback; `test/input-queue-rpc.test.mjs` uses actual Pi with a local fake SSE provider to preserve in-flight work/tool completion, queued steering/follow-up order and explicit abort; `test/input-queue-tui-smoke.py` verifies real Enter/Alt+Enter and old→new `/reload`. These tests do not use paid providers, real workers or production Mesh state.
+
+```sh
+npm run check
+python3 test/input-queue-tui-smoke.py
+# Isolated reload proof against an archived old extension directory:
+MESH_QUEUE_OLD_ROOT=/private/backup/installed python3 test/input-queue-tui-smoke.py
 ```
 
-Run `/reload` in every open Pi session, then `/mesh` and refresh the dashboard. New sessions receive project-role names and project channels automatically. Optional overrides:
+## Activation
+
+Use the Git package installation above; `pi list` identifies its checkout. Run `/reload` in every open Pi session after current work finishes, then `/mesh` and refresh the dashboard. New sessions receive project-role names and project channels automatically. Optional overrides:
 
 ```text
 /mesh name Cubed
@@ -136,7 +169,7 @@ Open the dashboard or documentation:
 Other commands:
 
 ```text
-/mesh version                      # loaded extension semantic version (e.g. Agent Mesh v2.7.2)
+/mesh version                      # loaded extension semantic version (e.g. Agent Mesh v2.7.4)
 /mesh doctor                       # read-only config/broker/session/fleet checks
 /mesh configure <agent>           # choose that online Pi session's model and thinking level
 /mesh jobs review Check this diff. # approve a single reviewer before any launch

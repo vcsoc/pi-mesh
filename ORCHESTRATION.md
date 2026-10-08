@@ -8,7 +8,7 @@ The runtime preserves historical approved continuation semantics. Legacy plans w
 
 Pause and steering request cancellation of active SDK work; controls are checked every 100 ms independently of heartbeat requests, with 250 ms child inbox polling. After cancellation acknowledgement, steering is processed in the retained session before original work continues. Pause waits for Continue. Unacknowledged cancellation requires human recovery; completed side effects are not rolled back. Interrupted host gates are rechecked after handling the intervention. Receipts distinguish requested interruption from successful completion. Untransferred steering survives an explicitly approved resume.
 
-Direct dashboard user messages to a supervisor and ordinary new user input pause its owned workflows. Peer messages remain coordination context. Child status/results appear in dashboard-only #user, not peer inboxes. New runs/resumes still require interactive approval, and old terminal runs are never automatically replayed.
+Explicit dashboard user interventions to a supervisor pause its owned workflows. Ordinary native Pi input does not abort or pause anything: Enter steers after the current response/tool batch, and Alt+Enter queues follow-up work after the task. Escape/explicit abort and Mesh controls remain separate. Peer messages remain coordination context. Child status/results appear in dashboard-only #user, not peer inboxes. New runs/resumes still require interactive approval, and old terminal runs are never automatically replayed.
 
 ## Quick start
 

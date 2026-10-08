@@ -1,0 +1,12 @@
+/node_modules/
+/.pi/
+/vault/
+/.env
+/.env.*
+/coverage/
+/test-results/
+/playwright-report/
+/pi-debug.log
+**/__pycache__/
+*.tmp
+.DS_Store
