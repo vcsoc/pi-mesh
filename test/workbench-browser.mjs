@@ -31,7 +31,7 @@ try {
   if(pathname==='/api/agents/config'&&route.request().method()==='POST'){mutations.push(pathname);const body=route.request().postDataJSON();state.agents.find(a=>a.id===body.agentId).configuration={id:'fixture-config',state:'pending',model:body.model,thinkingLevel:body.thinkingLevel};return route.fulfill({status:202,json:{request:{id:'fixture-config'}}})}
   if(pathname==='/api/events')return route.fulfill({contentType:'text/event-stream',body:': fixture\n\n'});
   if(route.request().method()==='POST'){mutations.push(pathname);return route.fulfill({json:{}})}
-  const files={'/':'dashboard.html','/help':'help.html','/dashboard.css':'dashboard.css','/dashboard.js':'dashboard.js','/fleet-panel.js':'fleet-panel.js','/management-workbench.js':'management-workbench.js','/management-workbench.css':'management-workbench.css','/policy-schema.mjs':'security/policy-schema.mjs'};
+  const files={'/':'dashboard.html','/help':'help.html','/dashboard.css':'dashboard.css','/dashboard.js':'dashboard.js','/topology-layout.mjs':'topology-layout.mjs','/fleet-panel.js':'fleet-panel.js','/management-workbench.js':'management-workbench.js','/management-workbench.css':'management-workbench.css','/policy-schema.mjs':'security/policy-schema.mjs'};
   if(files[pathname])return route.fulfill({body:await readFile(new URL('../'+files[pathname],import.meta.url)),contentType:pathname.endsWith('.css')?'text/css':(pathname.endsWith('.js')||pathname.endsWith('.mjs'))?'text/javascript':'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"}});
   return route.fulfill({status:404,body:''});
  });
@@ -183,6 +183,28 @@ try {
  for(let i=0;i<3;i++){const name=`system-${i}`;state.channels.push({name,memberCount:0,memberNames:[]});for(let j=i*25;j<(i+1)*25;j++){state.agents[j].channels=[name];state.agents[j].activeChannel=name}};
  await page.waitForTimeout(1700);await page.locator('[data-node="channel:system-1"]').click({button:'right'});await page.getByRole('menuitem',{name:'Show system'}).click();await page.waitForFunction(()=>document.querySelector('#topology-system-label')?.textContent.includes('#system-1'));assert.equal(await page.locator('.topology-node.planet').count(),25);await page.locator('#topology-overview').click();for(const mode of ['spatial','structured','orbital']){await page.locator('#topology-layout').selectOption(mode);assert.equal(await labelsDoNotOverlap(),true,`${mode} must remain collision-free with 110 agents`);if(mode==='orbital'){assert.equal(await page.locator('.topology-node.sun').count(),1);assert.equal(await page.locator('.topology-node.planet').count(),25);assert.equal(await page.locator('[data-node="channel:user"]').count(),0)}}
  await page.reload();await page.waitForSelector('[data-node="channel:system-1"].sun');assert.equal(await page.locator('.topology-node.planet').count(),25,'the selected system survives dashboard refresh');assert.equal(await page.locator('[data-node="channel:user"]').count(),0);
+ // Representative busy dashboard: separated projects and no idle-poll DOM churn.
+ await page.locator('#topology-layout').selectOption('spatial');
+ state.agents=Array.from({length:65},(_,i)=>({id:i%6===0?`orc-${Math.floor(i/6)}`:`job-fixture-${i}`,name:i%6===0?`Project ${Math.floor(i/6)} orchestrator`:`Worker ${i}`,role:i%6===0?'orchestrator':'reviewer',parentAgentId:i%6===0?null:`orc-${Math.floor(i/6)}`,runId:i%6===0?null:'fixture',projectHash:`project-${Math.floor(i/6)}`,projectName:`Project ${Math.floor(i/6)}`,cwd:`/fixture/${Math.floor(i/6)}`,channels:[`project-${Math.floor(i/6)}`],activeChannel:`project-${Math.floor(i/6)}`,status:'working',enabled:true}));
+ state.channels=Array.from({length:11},(_,i)=>({name:`project-${i}`,memberCount:6,memberNames:[]}));
+ state.messages=Array.from({length:217},(_,i)=>({...messages[0],id:1000+i,content:`Fixture ${i} / ${'Long transcript text. '.repeat(30)}`,scopeChannel:'project-0'}));state.totalMessages=state.messages.length;
+ await page.waitForFunction(()=>document.querySelectorAll('.project-neighbourhood').length===11);
+ assert.equal(await labelsDoNotOverlap(),true,'neighbourhood labels never overlap');
+ assert.equal(await page.locator('line.parent-link').count(),54,'real registered children connect to their own orchestrator');
+ assert.match(await page.locator('#worker-status').textContent(),/54 live child agents/);
+ await page.evaluate(()=>{window.savedMessage=document.querySelector('.message');window.savedGraph=document.querySelector('.topology-graph');window.savedRecipient=document.querySelector('#to option')});
+ state.agents.forEach(agent=>{agent.lastSeenAt=Date.now();agent.lastAck=1200});
+ await page.waitForTimeout(1700);
+ assert.equal(await page.evaluate(()=>savedMessage===document.querySelector('.message')&&savedGraph===document.querySelector('.topology-graph')&&savedRecipient===document.querySelector('#to option')),true,'heartbeat-only refresh preserves all display DOM');
+ const interactionMs=await page.evaluate(()=>{const start=performance.now();document.querySelector('[data-node="agent:orc-0"]').click();return performance.now()-start});
+ assert.ok(interactionMs<100,`65-agent/217-message selection took ${interactionMs}ms (budget 100ms)`);
+ state.agents.push({...state.agents[1],id:'job-fixture-new',name:'New worker',parentAgentId:'orc-0'});
+ await page.waitForSelector('[data-node="agent:job-fixture-new"]');
+ assert.equal(await page.locator('[data-node="agent:job-fixture-new"]').getAttribute('data-parent'),'orc-0');
+ assert.match(await page.locator('#worker-status').textContent(),/55 live child agents/);
+ await page.locator('#worker-fleet').click();assert.equal(await page.locator('#fleet-panel').isVisible(),true);
+ await page.locator('[data-view="all"]').click();await page.screenshot({path:'/tmp/mesh-project-neighbourhoods.png',fullPage:true});
+ console.log(`Performance: ${interactionMs.toFixed(1)}ms selection; heartbeat refresh preserves DOM`);
  assert.deepEqual(errors,[]);
  console.log('PASS: 110-node overviews, single-channel solar systems via both context menus, inactive member planets, system switching/removal/refresh, nonoverlap, orbit navigation/search, config tab, panel shortcuts, tutorial, responsive layout and only explicit mutations.');
 } finally { await browser.close(); }

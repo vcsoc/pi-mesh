@@ -26,6 +26,7 @@ test('detached children register roles; parent name reclamation preserves approv
  const run=launchRun(f.data,spec);
  let child;for(let n=0;n<80&&!child;n++){const state=await fetch(f.base+'/api/state',{headers:f.headers}).then(r=>r.json());child=state.agents.find(a=>a.id.startsWith('job-'));if(!child)await new Promise(r=>setTimeout(r,50))}
  assert.ok(child);assert.equal(child.name,`${path.basename(cwd)}-dev`);assert.equal(child.role,'developer');
+ assert.equal(child.parentAgentId,'parent');assert.equal(child.runId,run.id);assert.ok(child.taskId);
  const intervention=await f.post('/api/user/messages',{to:child.id,content:'Scope refinement for fixture'});assert.equal(intervention.response.status,201);
  await f.post('/api/offline',{agentId:'parent'});const replacement=await f.post('/api/register',{agentId:'replacement',cwd});assert.equal(replacement.value.agent.name,parent.value.agent.name);
  const completed=await waitRun(f.data,run.id,{timeoutMs:10000});assert.equal(completed.state,'completed','offline name reuse must not revoke durable grants');
@@ -37,6 +38,16 @@ test('detached children register roles; parent name reclamation preserves approv
  for(let n=0;n<80&&!active;n++){const state=await fetch(f.base+'/api/state',{headers:f.headers}).then(r=>r.json());active=state.agents.find(a=>a.id.startsWith(`job-${second.id}`));if(!active)await new Promise(r=>setTimeout(r,50))}
  assert.ok(active);await f.post('/api/agents/toggle',{agentId:active.id,enabled:false});
  assert.equal((await waitRun(f.data,second.id,{timeoutMs:10000})).state,'cancelled','explicit child disable revokes execution');
+});
+test('worker lineage is public, persistent and cannot point across project identities',async t=>{
+ const f=await fixture(t);await f.post('/api/register',{agentId:'parent',cwd:'/fixture/one'});await f.post('/api/register',{agentId:'other',cwd:'/fixture/two'});
+ const worker={agentId:'job-run-fixture-task',parentAgentId:'parent',runId:'run-fixture',taskId:'task',role:'reviewer',cwd:'/fixture/one'};
+ const registered=await f.post('/api/register',worker);assert.equal(registered.response.status,200);assert.equal(registered.value.agent.parentAgentId,'parent');assert.equal(registered.value.agent.runId,'run-fixture');
+ const repeat=await f.post('/api/register',{agentId:worker.agentId,cwd:worker.cwd});assert.equal(repeat.value.agent.parentAgentId,'parent');
+ assert.equal((await f.post('/api/register',{...worker,agentId:'job-run-fixture-bad',parentAgentId:'other'})).response.status,409);
+ assert.equal((await f.post('/api/register',{...worker,agentId:'ordinary-session'})).response.status,409);
+ const persisted=JSON.parse(await readFile(path.join(f.data,'agents.json'),'utf8'));assert.equal(persisted[worker.agentId].taskId,'task');
+ const asset=await fetch(f.base+'/topology-layout.mjs',{headers:f.headers});assert.equal(asset.status,200);assert.match(await asset.text(),/neighbourhoodLayout/);
 });
 test('recognizable legacy default names migrate but deliberate custom names survive',async t=>{
  const cwd='/tmp/mypi',f=await fixture(t,{agents:{abcde:{id:'abcde',name:'mypi-abcde',cwd,status:'idle',lastSeenAt:Date.now(),channels:['general']},custom:{id:'custom',name:'My Chosen Name',cwd,status:'idle',lastSeenAt:Date.now(),channels:['general']}}});
@@ -282,5 +293,11 @@ test('authenticated live events publish heartbeat activity transitions', async t
  const beat=await f.post('/api/heartbeat',{agentId:'a',status:'working',activity:'thinking'});
  assert.equal(beat.value.agent.activity,'thinking');
  assert.match(new TextDecoder().decode((await reader.read()).value),/changed/);
+ let received=false;const next=reader.read().then(packet=>{received=true;return packet});
+ await f.post('/api/heartbeat',{agentId:'a',status:'working',activity:'thinking'});
+ await f.post('/api/ack',{agentId:'a',messageId:0});
+ await new Promise(resolve=>setTimeout(resolve,100));assert.equal(received,false,'unchanged heartbeats/acks must not wake every dashboard');
+ await f.post('/api/heartbeat',{agentId:'a',status:'idle',activity:'waiting'});
+ assert.match(new TextDecoder().decode((await next).value),/changed/);
  cancel.abort();
 });

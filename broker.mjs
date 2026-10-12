@@ -201,7 +201,7 @@ function availableAgentName(name, except) { if (Object.values(agents).some((item
 function modelCatalog(value){return Array.isArray(value)?value.slice(0,100).filter(row=>row&&typeof row.id==='string'&&row.id.length<=300&&/^[^\s/]+\/.+$/.test(row.id)).map(row=>({id:row.id,levels:Array.isArray(row.levels)?row.levels.filter(level=>THINKING_LEVELS.has(level)):[]})):[]}
 function publicAgent(item) {
 	const enabled = item.enabled !== false, blocked = projectBlocked(item);
-	return { id: item.id, name: item.name, role: item.role || 'orchestrator', cwd: item.cwd, sessionFile: item.sessionFile || null, model: item.model || null, thinkingLevel: item.thinkingLevel || null, configurable: Boolean(item.configSupportedAt && Date.now()-item.configSupportedAt<=ONLINE_MS && !item.id.startsWith('job-') && !item.removedAt && item.status!=='offline' && policy.enabled && enabled && !blocked), configuration: item.pendingConfig ? {id:item.pendingConfig.id,state:item.pendingConfig.expiresAt>Date.now()?'pending':'expired',model:item.pendingConfig.model,thinkingLevel:item.pendingConfig.thinkingLevel} : item.configReceipt || null, status: Date.now() - Number(item.lastSeenAt || 0) <= ONLINE_MS && item.status !== "offline" ? item.status : "offline", activity: item.status === 'idle' ? (item.activity === 'waiting' ? 'waiting' : 'idle') : (item.activity || item.status), enabled, effectiveEnabled: policy.enabled && enabled && !blocked, projectHash: item.projectHash, projectName: item.projectName, projectBlocked: blocked, lastSeenAt: item.lastSeenAt, registeredAt: item.registeredAt, lastAck: Number(item.lastAck || 0), generation: Number(item.generation || 1), activeChannel: activeChannel(item), channels: [...(item.channels || [])].sort((a, b) => a.localeCompare(b)) };
+	return { id: item.id, name: item.name, role: item.role || 'orchestrator', parentAgentId: item.parentAgentId || null, runId: item.runId || null, taskId: item.taskId || null, cwd: item.cwd, sessionFile: item.sessionFile || null, model: item.model || null, thinkingLevel: item.thinkingLevel || null, configurable: Boolean(item.configSupportedAt && Date.now()-item.configSupportedAt<=ONLINE_MS && !item.id.startsWith('job-') && !item.removedAt && item.status!=='offline' && policy.enabled && enabled && !blocked), configuration: item.pendingConfig ? {id:item.pendingConfig.id,state:item.pendingConfig.expiresAt>Date.now()?'pending':'expired',model:item.pendingConfig.model,thinkingLevel:item.pendingConfig.thinkingLevel} : item.configReceipt || null, status: Date.now() - Number(item.lastSeenAt || 0) <= ONLINE_MS && item.status !== "offline" ? item.status : "offline", activity: item.status === 'idle' ? (item.activity === 'waiting' ? 'waiting' : 'idle') : (item.activity || item.status), enabled, effectiveEnabled: policy.enabled && enabled && !blocked, projectHash: item.projectHash, projectName: item.projectName, projectBlocked: blocked, lastSeenAt: item.lastSeenAt, registeredAt: item.registeredAt, lastAck: Number(item.lastAck || 0), generation: Number(item.generation || 1), activeChannel: activeChannel(item), channels: [...(item.channels || [])].sort((a, b) => a.localeCompare(b)) };
 }
 function publicChannels(agentId) {
 	const joinedKeys = new Set((agents[agentId]?.channels || []).map(key));
@@ -319,6 +319,13 @@ function registrationName(input,existing,identity) {
  }
  return {name:choice.name,role,nameMode:explicit?'custom':'role'};
 }
+function registrationLineage(input, identity, existing) {
+ const parentAgentId=input.parentAgentId||existing?.parentAgentId;
+ if(!parentAgentId)return {};
+ const parent=agents[clean(parentAgentId,'parentAgentId',160)],runId=clean(input.runId||existing?.runId,'runId',80),taskId=clean(input.taskId||existing?.taskId||'','taskId',160,true);
+ if(!parent||parent.id===input.agentId||parent.projectHash!==identity.projectHash||!String(input.agentId).startsWith(`job-${runId}-`))throw Object.assign(new Error('Worker parent must be a different registered agent in the same project and match the job identity'),{status:409,code:'INVALID_WORKER_PARENT'});
+ return {parentAgentId:parent.id,runId,taskId};
+}
 function registrationIdentity(input, existing) {
 	const cwd = clean(input.cwd, "cwd", 2000), suppliedHash = cleanProjectHash(input.projectHash), project = projectIdentity(cwd);
 	if (suppliedHash !== project.projectHash || (existing?.projectHash && existing.projectHash !== project.projectHash)) throw Object.assign(new Error("projectHash does not match the canonical project identity"), { status: 409, code: "PROJECT_IDENTITY_MISMATCH" });
@@ -330,6 +337,7 @@ function asset(response, name, type) { const path = join(extensionDir, name); re
 const securityDrafts = new PolicyDrafts(join(dataDir, 'security-drafts'));
 const securityScopes = () => [{id:'',label:'Mesh default — draft only'}, ...[...new Map(Object.values(agents).map(agent => [agent.projectHash, {id:agent.projectHash,label:`${agent.projectName} · ${agent.cwd}`}])).values()].filter(item => item.id)];
 const subscribers = new Set();
+const displayPresence = agent => {if(!agent)return '';const {lastSeenAt,lastAck,registeredAt,...display}=publicAgent(agent);return JSON.stringify(display)};
 const server = createServer(async (request, response) => {
 	try {
 		const url = new URL(request.url || "/", origin), method = request.method || "GET";
@@ -344,6 +352,7 @@ const server = createServer(async (request, response) => {
         if (method === 'GET' && url.pathname === '/management-workbench.css') return asset(response,'management-workbench.css','text/css; charset=utf-8');
         if (method === 'GET' && url.pathname === '/policy-schema.mjs') return asset(response,'security/policy-schema.mjs','text/javascript; charset=utf-8');
 		if (method === "GET" && url.pathname === "/dashboard.js") return asset(response, "dashboard.js", "text/javascript; charset=utf-8");
+        if (method === 'GET' && url.pathname === '/topology-layout.mjs') return asset(response,'topology-layout.mjs','text/javascript; charset=utf-8');
 		if (method === 'GET' && url.pathname === '/fleet-panel.js') return asset(response,'fleet-panel.js','text/javascript; charset=utf-8');
 		if (method === 'GET' && url.pathname === '/orchestration') return asset(response,'ORCHESTRATION.md','text/plain; charset=utf-8');
 		if (method === "GET" && url.pathname === "/help") return asset(response, "help.html", "text/html; charset=utf-8");
@@ -370,7 +379,8 @@ const server = createServer(async (request, response) => {
 		mutationOrigin(request); const input = await body(request);
         if (url.pathname === '/api/security/validate') return json(response,200,securityDrafts.validate(input,securityScopes()));
         if (url.pathname === '/api/security/draft') return json(response,200,securityDrafts.save(input,securityScopes()));
-		response.once('finish', () => { if (response.statusCode < 400) for (const stream of subscribers) { if (!stream.write('data: changed\n\n')) stream.destroy(); } });
+		const presenceOnly=['/api/heartbeat','/api/ack'].includes(url.pathname),presenceBefore=presenceOnly?displayPresence(agents[input.agentId]):null;
+        response.once('finish', () => { if (response.statusCode < 400 && (!presenceOnly || presenceBefore!==displayPresence(agents[input.agentId]))) for (const stream of subscribers) { if (!stream.write('data: changed\n\n')) stream.destroy(); } });
 		if (url.pathname === '/api/fleet/control') {
 			try { return json(response, 202, enqueueControl(dataDir,input.id,input.action,input.message)); }
 			catch (cause) { return error(response,400,'INVALID_FLEET_CONTROL',cause.message); }
@@ -428,8 +438,9 @@ const server = createServer(async (request, response) => {
 			const id = clean(input.agentId, "agentId", 160), existing = agents[id];
 			if (existing?.removedAt) return error(response, 410, "AGENT_REMOVED", "Agent was removed and must explicitly rejoin");
 			const identity=registrationIdentity(input,existing);
+            const lineage=registrationLineage(input,identity,existing);
 			const naming=registrationName(input,existing,identity);
-			agents[id] = { ...existing, id, ...naming, ...identity, channels: existing?.channels || [ensureChannel(projectChannel(identity)).name], generation: Number(existing?.generation || 1), registeredAt: existing?.registeredAt || new Date().toISOString(), lastSeenAt: Date.now(), lastAck: existing ? Number(existing.lastAck || 0) : Number(messages.at(-1)?.id || 0), ...(input.configSupport===true?{configSupportedAt:Date.now(),thinkingLevel:THINKING_LEVELS.has(input.thinkingLevel)?input.thinkingLevel:null,modelCatalog:modelCatalog(input.modelCatalog)}:{}) };
+			agents[id] = { ...existing, id, ...naming, ...identity, ...lineage, channels: existing?.channels || [ensureChannel(projectChannel(identity)).name], generation: Number(existing?.generation || 1), registeredAt: existing?.registeredAt || new Date().toISOString(), lastSeenAt: Date.now(), lastAck: existing ? Number(existing.lastAck || 0) : Number(messages.at(-1)?.id || 0), ...(input.configSupport===true?{configSupportedAt:Date.now(),thinkingLevel:THINKING_LEVELS.has(input.thinkingLevel)?input.thinkingLevel:null,modelCatalog:modelCatalog(input.modelCatalog)}:{}) };
 			repairActiveChannel(agents[id]);
 			persistChannels(); persistAgents(); const blocked = policyError(agents[id]); if (blocked) throw blocked;
 			return json(response, 200, { agent: publicAgent(agents[id]) });

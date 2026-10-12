@@ -58,6 +58,16 @@ Target live runs explicitly: `/mesh steer <full-run-id> <instruction>` (also `/m
 
 See `patches/COMPLETION.md` for the six-file installed update, preserved runtime/history and test evidence. `/reload` activates this session's changes.
 
+## Project neighbourhoods and live workers
+
+Spatial topology groups agents by canonical project identity into separate outlined neighbourhoods. Orchestrators sit inside their own worker clusters; registered child agents link to their actual parent. Same-named projects with different identities stay separate. Shared/user channels have a separate area. Other layouts, membership links, search, zoom and channel focus remain available.
+
+The dashboard preserves unchanged message/graph DOM during heartbeat polling, indexes channel aliases and message counts, and coalesces live notifications. The broker emits presence notifications only when displayed activity changes, not for every unchanged heartbeat or acknowledgment.
+
+The timeline footer reports live child agents and links to Work fleet. Participants and topology tooltips include recorded role, parent and run identity. Ordinary messages and existing orchestrator sessions do not automatically create workers: use `/mesh team <request>` (or preview a workflow), review its scope/models/budget, then explicitly Accept. Parallel stages run only inside those approved limits. Historical workers without parent metadata remain visible without invented parent links; new workers record their parent/run/task when registered.
+
+Validation includes deterministic 500-agent layout tests, parent/project registration checks, unchanged-heartbeat SSE tests, and browser fixtures with 65 agents/217 messages plus 110-node layout, navigation and mobile checks. Performance measurements are fixture evidence, not a guarantee for every browser or machine.
+
 ## Simple Mesh — history-style Pi TUI
 
 Run `/mesh` and enter your task, or `/mesh team <request>` directly. The main view is one compact rounded panel, like prompt-history:

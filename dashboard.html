@@ -71,7 +71,7 @@
       </section>
       <div id="timeline-main" class="timeline-main" role="tabpanel" aria-label="Messages">
         <section id="messages" class="messages" aria-live="polite"></section>
-        <div class="latest"><span id="latest-label">No messages yet</span></div>
+        <div class="latest"><span id="latest-label">No messages yet</span><div class="worker-summary"><span id="worker-status" role="status">Checking child agents...</span><button id="worker-fleet" type="button">Work fleet</button></div></div>
       </div>
     </main>
 
@@ -127,7 +127,7 @@
       <nav aria-label="Walkthrough navigation"><button id="tour-exit" type="button">Exit</button><button id="tour-previous" type="button">Previous</button><button id="tour-next" type="button">Next</button></nav>
     </section>
   </dialog>
-  <script src="/dashboard.js" defer></script>
+  <script type="module" src="/dashboard.js"></script>
   <script src="/fleet-panel.js" defer></script>
 </body>
 </html>

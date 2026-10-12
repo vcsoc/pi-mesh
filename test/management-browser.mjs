@@ -70,7 +70,7 @@ const mesh = spawn(
   ],
   { stdio: "ignore" },
 );
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
 try {
   await wait(() =>
     fetch(`http://127.0.0.1:${meshPort}/health`).then((r) => r.ok),

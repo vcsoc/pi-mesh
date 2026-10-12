@@ -176,7 +176,7 @@ export async function supervise(dir,{factory,now=()=>Date.now()}={}) {
     let creationTimer;try {session=await Promise.race([creation,stopped,new Promise((_,reject)=>{creationTimer=setTimeout(()=>reject(new Error('Child setup deadline exceeded')),30000)})]);}
     catch(error){void creation.then(late=>late.dispose(),()=>{});throw error}finally{clearTimeout(creationTimer)}row.sessionFile=session.sessionFile||null;
     if(stop)throw new Error(fatal||'Cancelled before launch');
-    if(spec.mesh){row.agentId=`job-${spec.id}-${key}`;const registered=await meshPost(spec,'/api/register',{agentId:row.agentId,role:task.profile,cwd:spec.cwd,projectHash:spec.projectHash,model:task.model,sessionFile:row.sessionFile||'',status:'working'});row.name=registered.agent.name;save();try{await meshPost(spec,'/api/agent/messages',{agentId:row.agentId,to:'#user',kind:'status',content:`Workflow ${spec.id} · ${task.id}: started (${row.profile}). Follow live tool activity and acceptance gates in Work fleet.`})}catch{}}
+    if(spec.mesh){row.agentId=`job-${spec.id}-${key}`;const registered=await meshPost(spec,'/api/register',{agentId:row.agentId,parentAgentId:spec.parentId,runId:spec.id,taskId:task.id,role:task.profile,cwd:spec.cwd,projectHash:spec.projectHash,model:task.model,sessionFile:row.sessionFile||'',status:'working'});row.name=registered.agent.name;save();try{await meshPost(spec,'/api/agent/messages',{agentId:row.agentId,to:'#user',kind:'status',content:`Workflow ${spec.id} · ${task.id}: started (${row.profile}). Follow live tool activity and acceptance gates in Work fleet.`})}catch{}}
     unsubscribe=session.subscribe(e=>{
      if(e.type==='message_update') {
       const delta=e.assistantMessageEvent;
