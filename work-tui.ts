@@ -3,6 +3,8 @@ import {
   SelectList,
   Key,
   matchesKey,
+  parseColor,
+  visibleWidth,
   truncateToWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
@@ -156,36 +158,24 @@ export async function reviewWork(
     }))
       ? "approve"
       : "cancel";
-  const overview = workflowSummaryLines(summary);
-  return ctx.ui.custom<ReviewDecision>(
-    (tui, theme, _keys, done) => {
-      let offset = 0,
-        selected = 0,
-        finished = false,
-        details = readOnly,
-        lastWidth = 80;
-      const buttons: readonly ReviewDecision[] = readOnly
-        ? ["back"]
-        : allowBack
-          ? ["back", "cancel", "approve"]
-          : ["cancel", "approve"];
-      const labels = {
-        back: "Back to edit",
-        cancel: "Cancel",
-        approve: "Approve & start",
+  const widgetKey = "mesh-execution-review";
+  try {
+    return await ctx.ui.custom((tui: any, theme: any, _keys: any, done: any) => {
+      let offset = 0, selected = 0, finished = false, lastWidth = 80;
+      const buttons = readOnly ? ["Cancel"] : ["Cancel", "Reject", "Accept"];
+      // style() treats strings as theme tokens; custom hues must be concrete colors.
+      const borderColor = parseColor("#5b9dff");
+      const border = (text: string) => theme.style(text, { fg: borderColor });
+      const actionColor: Record<string, ReturnType<typeof parseColor>> = {
+        Cancel: parseColor("#e5b84b"), Reject: parseColor("#f07575"), Accept: parseColor("#65ce8a"),
       };
-      const height = () =>
-        Math.max(
-          3,
-          Math.min(
-            28,
-            (tui.terminal.rows || 24) - 2,
-            Math.floor((tui.terminal.rows || 24) * 0.85),
-          ),
-        );
-      const canReview = () => height() >= 7 && lastWidth >= 20;
-      const finish = (value: ReviewDecision) => {
-        if (finished || (value === "approve" && !canReview())) return;
+      const action = (label: string, index: number) => theme.style(
+        index === selected ? `[ ${label} ]` : `  ${label}  `,
+        { fg: actionColor[label], bold: index === selected },
+      );
+      const height = () => Math.max(1, Math.floor((tui.terminal.rows || 24) / 2) - 5);
+      const finish = (value: "approve" | "back" | "cancel") => {
+        if (finished || (value === "approve" && (lastWidth < 20 || Math.floor((tui.terminal.rows || 24) / 2) < 7))) return;
         finished = true;
         signal?.removeEventListener("abort", abort);
         done(value);
@@ -193,136 +183,68 @@ export async function reviewWork(
       const abort = () => finish("cancel");
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) queueMicrotask(abort);
-      return {
+      const browser = {
         render(width: number) {
           lastWidth = width;
-          const total = height();
-          const spacious = total >= 9;
-          const showTitle = total > buttons.length;
-          const showHint = total > buttons.length + Number(showTitle);
-          const footer = buttons.length + (spacious ? 3 : Number(showHint));
-          const capacity = Math.max(0, total - footer - Number(showTitle));
-          const lines = (
-            canReview()
-              ? details
-                ? text
-                : overview
-              : ["Resize terminal to review safely"]
-          ).flatMap((line) =>
-            wrapTextWithAnsi(line || " ", Math.max(1, width)),
+          const capacity = height();
+          const innerWidth = Math.max(0, width - 2);
+          const lines = text.slice(1).flatMap((line) =>
+            wrapTextWithAnsi(line || " ", Math.max(1, innerWidth)),
           );
-          offset = Math.min(offset, Math.max(0, lines.length - capacity));
+          offset = Math.max(0, Math.min(offset, Math.max(0, lines.length - capacity)));
           const body = lines.slice(offset, offset + capacity);
-          const actions = buttons.map((button, index) =>
-            theme.fg(
-              index === selected ? "accent" : "muted",
-              truncateToWidth(
-                `${index === selected ? ">" : " "} [${button === "approve" && !canReview() ? "Approve (resize first)" : labels[button]}]`,
-                width,
-              ),
-            ),
-          );
-          return [
-            ...(showTitle
-              ? [
-                  theme.fg(
-                    "accent",
-                    truncateToWidth(
-                      details
-                        ? "Mesh work: exact details"
-                        : "Mesh work approval",
-                      width,
-                    ),
-                  ),
-                ]
-              : []),
+          while (body.length < capacity) body.push("");
+          const title = truncateToWidth(" MESH EXECUTION REVIEW ", innerWidth);
+          const left = "─".repeat(Math.max(0, Math.floor((innerWidth - visibleWidth(title)) / 2)));
+          const right = "─".repeat(Math.max(0, innerWidth - visibleWidth(title) - left.length));
+          const contents = [
             ...body,
-            ...Array.from(
-              { length: Math.max(0, capacity - body.length) },
-              () => "",
-            ),
-            ...(spacious
-              ? [
-                  theme.fg(
-                    "dim",
-                    truncateToWidth(
-                      `${details ? "Details" : "Summary"}: ${offset + 1}-${Math.min(lines.length, offset + capacity)} of ${lines.length}`,
-                      width,
-                    ),
-                  ),
-                ]
-              : []),
-            ...actions,
-            ...(spacious
-              ? [
-                  theme.fg(
-                    "muted",
-                    truncateToWidth(
-                      "Tab: action  Enter: select  Esc: cancel",
-                      width,
-                    ),
-                  ),
-                ]
-              : []),
-            ...(showHint
-              ? [
-                  theme.fg(
-                    "dim",
-                    truncateToWidth(
-                      spacious
-                        ? `d: ${details ? "summary" : "exact details"}  Up/Down/PgUp/PgDn: scroll`
-                        : "Tab/Enter  d: details  Esc",
-                      width,
-                    ),
-                  ),
-                ]
-              : []),
-          ].map((line) =>
-            theme.bg("toolPendingBg", truncateToWidth(line, width, "", true)),
-          );
+            theme.fg("dim", truncateToWidth(`Lines ${offset + 1}-${Math.min(lines.length, offset + capacity)} of ${lines.length}`, innerWidth)),
+            truncateToWidth(innerWidth < 38
+              ? `${action(buttons[selected], selected)} (${selected + 1}/${buttons.length})`
+              : buttons.map(action).join("  "), innerWidth),
+            theme.fg("dim", truncateToWidth("Up/Down scroll | Left/Right action | Enter choose | Esc cancel", innerWidth)),
+          ];
+          return [
+            border(`╭${left}`) + theme.fg("accent", title) + border(`${right}╮`),
+            ...contents.map(line => {
+              const clipped = truncateToWidth(line, innerWidth);
+              return border("│") + clipped + " ".repeat(Math.max(0, innerWidth - visibleWidth(clipped))) + border("│");
+            }),
+            border(`╰${"─".repeat(innerWidth)}╯`),
+          ].map(line => truncateToWidth(line, Math.max(0, width)));
         },
         invalidate() {},
-        dispose() {
-          signal?.removeEventListener("abort", abort);
-        },
+        dispose() { signal?.removeEventListener("abort", abort); },
         handleInput(data: string) {
+          if (finished) return;
           if (matchesKey(data, Key.escape)) return finish("cancel");
-          if (matchesKey(data, Key.enter)) return finish(buttons[selected]);
-          if (matchesKey(data, "d")) {
-            details = !details;
-            offset = 0;
-          } else if (matchesKey(data, Key.tab) || matchesKey(data, Key.right))
-            selected = (selected + 1) % buttons.length;
-          else if (
-            matchesKey(data, Key.shift("tab")) ||
-            matchesKey(data, Key.left)
-          )
-            selected = (selected + buttons.length - 1) % buttons.length;
+          if (matchesKey(data, Key.enter)) {
+            return finish(buttons[selected] === "Accept" ? "approve" : buttons[selected] === "Reject" && allowBack ? "back" : "cancel");
+          }
+          if (matchesKey(data, Key.tab) || matchesKey(data, Key.right)) selected = (selected + 1) % buttons.length;
+          else if (matchesKey(data, Key.shift("tab")) || matchesKey(data, Key.left)) selected = (selected + buttons.length - 1) % buttons.length;
           else if (matchesKey(data, Key.home)) offset = 0;
           else if (matchesKey(data, Key.end)) offset = Number.MAX_SAFE_INTEGER;
           else if (matchesKey(data, Key.down)) offset++;
           else if (matchesKey(data, Key.up)) offset = Math.max(0, offset - 1);
-          else if (matchesKey(data, Key.pageDown))
-            offset += Math.max(1, height() - buttons.length - 4);
-          else if (matchesKey(data, Key.pageUp))
-            offset = Math.max(
-              0,
-              offset - Math.max(1, height() - buttons.length - 4),
-            );
+          else if (matchesKey(data, Key.pageDown)) offset += height();
+          else if (matchesKey(data, Key.pageUp)) offset = Math.max(0, offset - height());
           tui.requestRender();
         },
       };
-    },
-    {
-      overlay: true,
-      overlayOptions: {
-        anchor: "center",
-        width: 100,
-        maxHeight: "85%",
-        margin: 1,
-      },
-    },
-  );
+      // The widget follows the real editor layout; the invisible overlay owns focus.
+      ctx.ui.setWidget(widgetKey, () => browser, { placement: "aboveEditor" });
+      return {
+        render: () => [],
+        invalidate: () => browser.invalidate(),
+        dispose: () => browser.dispose(),
+        handleInput: (data: string) => browser.handleInput(data),
+      };
+    }, { overlay: true, overlayOptions: { anchor: "top-left", row: 0, col: 0, width: 1 } });
+  } finally {
+    ctx.ui.setWidget(widgetKey, undefined);
+  }
 }
 
 // Editing is a private draft. The caller must compile afresh and obtain reviewWork approval.

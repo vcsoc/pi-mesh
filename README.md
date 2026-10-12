@@ -36,7 +36,7 @@ The cache must match the installed Pi version exactly. Reload after installing o
 
 ## Work approval
 
-Tool-driven work approvals open a compact overlay with a summary first. Approve and Cancel stay outside the scrolling content. Press `d` for the full plan, use arrows or Page Up/Page Down to scroll, and Tab to select an action. Cancel is the default. A terminal too small to display the controls cannot approve work
+Tool-driven work approvals open the half-height MESH EXECUTION REVIEW panel above the input editor. Exact plan details scroll while Cancel, Reject and Accept stay at the bottom. Use arrows or Page Up/Page Down to scroll, Left/Right or Tab to select an action, and Enter to choose it. Cancel is the default. A terminal too small to review safely cannot approve work.
 
 The collapsed tool transcript stays short; expand it for the full result. Runtime completion remains separate from acceptance evidence
 
@@ -76,6 +76,10 @@ Permissions Inspect full execution details
 ```
 
 **Up/Down** chooses a field. **Enter** changes it. **Tab** selects Change/Cancel/Accept; Enter performs that action. **Escape** cancels. Changing rows resets the action to Change; Accept is never the default.
+
+Run `/mesh jobs review-demo` to test a long sample review using the actual panel. All three actions only close the demo and report the choice; no worker, run or model request is created.
+
+The **MESH EXECUTION REVIEW** panel follows the history browser layout: directly above the input editor, occupying half the terminal height on normal-sized terminals. Its body scrolls with **Up/Down** or **PageUp/PageDown**; the actions stay at the bottom. **Left/Right** (or Tab/Shift+Tab) cycles **Cancel / Reject / Accept**, and **Enter** chooses the selected action. Cancel is selected initially; Escape cancels. Reject returns to editing when available, otherwise refuses the launch. Read-only reviews offer only Cancel. No scrolling or action cycling starts work.
 
 **Accept starts the displayed team**, without a second approval maze. The panel compiles a preview before rendering; acceptance is bound privately to that exact normalized scope, role instructions, model/tool set, limits and parent-context fingerprint. The controller compiles again before launching and requires fresh acceptance if anything changed. Public tool parameters cannot manufacture this UI grant. Existing tool run/resume approval remains interactive.
 

@@ -69,11 +69,11 @@ try:
     choose('\x1b[B\x1b[B', 'Mesh · advanced (optional)')
     os.write(master, b'\x1b')
     pump(0.4)
-    choose('\x1b[B', 'Mesh work: exact details')
-    assert 'NOT integrated' in text(), 'Missing sandbox limitation'
+    choose('\x1b[B', 'MESH EXECUTION REVIEW')
     for _ in range(15):
         os.write(master, b'\x1b[6~')
         pump(0.05)
+    assert 'NOT integrated' in text(), 'Missing sandbox limitation'
     assert 'Exact model: fixture/two' in text(), 'Edited model missing from compiled details'
     assert 'APPROVE & START' not in text(), 'Read-only details must not expose a second approval action'
     choose('\t', 'Mesh · new team')
@@ -90,21 +90,17 @@ try:
         {'profile': 'reviewer', 'lane': name, 'task': f'Inspect {name} only. ' + 'Exact scoped instruction. ' * 30}
         for name in ('database-license', 'timezone', 'localization', 'database-models-costs')
     ]}
-    choose('/mesh jobs ' + json.dumps({'action': 'run', 'definition': definition}), 'Mesh work approval')
-    assert '[Cancel]' in visible() and '[Approve & start]' in visible(), visible()
-    assert 'Budget: up to $2' in visible(), visible()
-    os.write(master, b'd')
-    pump(0.4)
-    assert 'Mesh work: exact details' in visible(), visible()
+    choose('/mesh jobs ' + json.dumps({'action': 'run', 'definition': definition}), 'MESH EXECUTION REVIEW')
+    assert '[ Cancel ]' in visible() and 'Reject' in visible() and 'Accept' in visible(), visible()
     for _ in range(30):
         os.write(master, b'\x1b[6~')
         pump(0.01)
-    assert '[Cancel]' in visible() and '[Approve & start]' in visible(), visible()
-    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 40, 0, 0))
-    screen.resize(lines=12, columns=40)
+    assert '[ Cancel ]' in visible() and 'Accept' in visible(), visible()
+    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 40, 0, 0))
+    screen.resize(lines=24, columns=40)
     os.kill(pid, signal.SIGWINCH)
     pump(0.5)
-    assert '[Cancel]' in visible() and '[Approve & start]' in visible(), visible()
+    assert '[ Cancel ]' in visible() and 'Accept' in visible(), visible()
     Path('/tmp/mesh-approval-visible.txt').write_text(visible())
     os.write(master, b'\x1b')
     pump(0.7)

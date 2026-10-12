@@ -144,6 +144,13 @@ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, avail
  pi.on('session_shutdown',async()=>{status.stop();for(const id of foreground)try{enqueueControl(getDirectory(),id,'stop')}catch{}foreground.clear();});
  return async(args:string,ctx:any)=>{
   const raw=args.trim()||'list';
+  if(raw==='review-demo') {
+   if(ctx.mode!=='tui')throw new Error('The review demo requires interactive Pi TUI mode. No work was started.');
+   const demo={project:ctx.cwd,workingDirectory:ctx.cwd,scope:'review',isolation:'shared',background:false,context:'fresh',thinkingLevel:'demo only',gateway:{mode:'demo — NO EXECUTION'},limits:{spawns:0,tokens:0,concurrency:0,estimatedCost:0,childDeadlineMs:0},steps:Array.from({length:4},(_,index)=>({parallel:false,retries:0,tasks:[{id:`sample-${index+1}`,role:['scout','developer','tester','reviewer'][index],lane:'sample',model:'DEMO — no model request',write:false,tools:['read (sample only)'],extensions:[],extensionTools:[],task:`SAMPLE ONLY — stage ${index+1}. This review is for testing layout, scrolling and action selection. Cancel, Reject and Accept only close this sample. No worker, shell command, model request or run is created.\nScroll through this long example to verify that the actions remain fixed at the bottom.`,prompt:'Sample instructions only. Inspect the panel appearance; do not execute this task.',acceptance:[{type:'json',required:['verdict'],equals:{verdict:'demo only'}}]}]}))};
+   const choice=await reviewWork(ctx,demo,undefined,true);
+   ctx.ui.notify(`Review demo closed: ${choice==='approve'?'Accept':choice==='back'?'Reject':'Cancel'}. No work started.`,'info');
+   return;
+  }
   if(/^team(?:\s|$)/i.test(raw)) {
    if(ctx.mode!=='tui')throw new Error('/mesh team requires interactive Pi TUI mode. No work was started.');
    if(process.env.PI_MESH_CHILD)throw new Error('Nested delegation is disabled');
