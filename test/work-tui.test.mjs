@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
+import { createRequire, findPackageJSON } from "node:module";
 import {
   existsSync,
   realpathSync,
@@ -42,21 +42,18 @@ function sdkRoot() {
   }
   throw new Error("Set PI_SDK_ROOT to the installed Pi package");
 }
-const sdk = sdkRoot(),
-  tuiPath = join(sdk, "node_modules/@earendil-works/pi-tui/dist/index.js");
-const { createJiti } = await import(
-  pathToFileURL(join(sdk, "node_modules/jiti/lib/jiti.mjs")).href
-);
+const sdk = sdkRoot(), sdkRequire = createRequire(join(sdk, "package.json")),
+  tuiPath = sdkRequire.resolve("@earendil-works/pi-tui");
+const { createJiti } = await import(pathToFileURL(sdkRequire.resolve("jiti")).href);
 const { visibleWidth } = await import(pathToFileURL(tuiPath).href);
+const aiPackage = findPackageJSON("@earendil-works/pi-ai", pathToFileURL(join(sdk, "dist/index.js")));
+const aiPath = join(dirname(aiPackage), JSON.parse(readFileSync(aiPackage, "utf8")).main);
 const loader = createJiti(import.meta.url, {
   alias: {
     "@earendil-works/pi-tui": tuiPath,
     "@earendil-works/pi-coding-agent": join(sdk, "dist/index.js"),
-    "@earendil-works/pi-ai": join(
-      sdk,
-      "node_modules/@earendil-works/pi-ai/dist/index.js",
-    ),
-    typebox: join(sdk, "node_modules/typebox/build/index.mjs"),
+    "@earendil-works/pi-ai": aiPath,
+    typebox: sdkRequire.resolve("typebox"),
   },
 });
 const { workPicker, reviewWork, editTeamRequest } = await loader.import(
@@ -66,9 +63,9 @@ const { meshPanel } = await loader.import(join(root, "mesh-panel.ts"));
 const { simpleTeam, simpleProposal } = await loader.import(
   join(root, "simple-team.ts"),
 );
-const theme = { fg: (_c, s) => s };
+const theme = { fg: (_c, s) => s, bg: (_c, s) => s };
 function screen(ctx = {}) {
-  let component,
+  let component, customOptions,
     closed = false;
   const tui = { terminal: { rows: 24 }, requestRender() {} };
   return {
@@ -76,8 +73,9 @@ function screen(ctx = {}) {
       mode: "tui",
       hasUI: true,
       ui: {
-        custom: async (factory) =>
+        custom: async (factory, options) =>
           new Promise((done) => {
+            customOptions = options;
             component = factory(tui, theme, {}, (value) => {
               closed = true;
               component?.dispose?.();
@@ -94,6 +92,9 @@ function screen(ctx = {}) {
     },
     get closed() {
       return closed;
+    },
+    get customOptions() {
+      return customOptions;
     },
   };
 }
@@ -190,6 +191,46 @@ test("native picker filters, preserves focus, handles Unicode/narrow resize and 
   ]);
   f.component.handleInput("\x1b");
   assert.equal(await cancelled, undefined);
+});
+
+test("large approval plans keep both actions visible while scrolling details and resizing", async () => {
+  const f = screen();
+  const large = { ...summary, steps: [{ parallel: true, tasks: Array.from({ length: 40 }, (_, i) => ({ ...summary.steps[0].tasks[0], id: `worker-${i}`, lane: `worker-${i}`, task: `Worker ${i} summary. ${"Exact instruction ".repeat(200)}END-OF-TASK-${i}` })) }] };
+  const result = reviewWork(f.ctx, large);
+  assert.doesNotMatch(f.component.render(80).join("\n"), /Exact instruction/);
+  f.component.handleInput("d");
+  for (const rows of [12, 24, 50]) {
+    f.tui.terminal.rows = rows;
+    for (const width of [24, 80, 100]) {
+      for (let i = 0; i < 100; i++) f.component.handleInput("\x1b[6~");
+      const output = f.component.render(width);
+      assert.ok(output.length <= Math.min(28, Math.floor(rows * 0.85)));
+      assert.match(output.join("\n"), /\[Cancel\]/);
+      assert.match(output.join("\n"), /\[Approve & start\]/);
+      assert.ok(output.every(line => visibleWidth(line) <= width));
+    }
+  }
+  f.component.handleInput("\x1b[F");
+  assert.match(f.component.render(80).join("\n"), /END-OF-TASK-39/);
+  assert.equal(f.closed, false);
+  f.component.handleInput("\t");
+  assert.equal(f.closed, false);
+  f.component.handleInput("\r");
+  assert.equal(await result, "approve");
+});
+
+test("an unreadably small approval viewport cannot start work and recovers after resize", async () => {
+  const f = screen();
+  f.tui.terminal.rows = 8;
+  const result = reviewWork(f.ctx, summary);
+  f.component.render(16);
+  f.component.handleInput("\t");
+  f.component.handleInput("\r");
+  assert.equal(f.closed, false);
+  f.tui.terminal.rows = 24;
+  assert.match(f.component.render(80).join("\n"), /Approve & start/);
+  f.component.handleInput("\r");
+  assert.equal(await result, "approve");
 });
 
 test("readable review defaults to cancel/back, scrolls, requires deliberate action and supports abort/RPC", async () => {
@@ -643,17 +684,14 @@ for(const goal of ['Fix tests','review this project'])test(`one explicit Accept 
       evidence = join(home, "accepted.json");
     writeFileSync(
       fixture,
-      `import {writeFileSync} from 'node:fs';export const canonicalProject=x=>'fixture-project', projectHash=x=>'fixture';export function launchRun(directory,spec){writeFileSync(${JSON.stringify(evidence)},JSON.stringify(spec.plan));return {id:'mock-boundary',state:'not-executed'};}export const waitRun=()=>{throw Error('Unexpected wait')},resumeSpecification=()=>{throw Error('Unexpected resume')},integrationEvidence=()=>{},runVerification=()=>{},updateMission=()=>{},listMissions=()=>[],runEvents=()=>[],listRuns=()=>[];`,
+      `import {writeFileSync} from 'node:fs';export const canonicalProject=x=>'fixture-project', projectHash=x=>'fixture', resolveSDKFile=()=> 'fixture-sdk';export function launchRun(directory,spec){writeFileSync(${JSON.stringify(evidence)},JSON.stringify(spec.plan));return {id:'mock-boundary',state:'not-executed'};}export const waitRun=()=>{throw Error('Unexpected wait')},resumeSpecification=()=>{throw Error('Unexpected resume')},integrationEvidence=()=>{},runVerification=()=>{},updateMission=()=>{},listMissions=()=>[],runEvents=()=>[],listRuns=()=>[];`,
     );
     const isolated = createJiti(import.meta.url, {
       alias: {
         "@earendil-works/pi-tui": tuiPath,
         "@earendil-works/pi-coding-agent": join(sdk, "dist/index.js"),
-        "@earendil-works/pi-ai": join(
-          sdk,
-          "node_modules/@earendil-works/pi-ai/dist/index.js",
-        ),
-        typebox: join(sdk, "node_modules/typebox/build/index.mjs"),
+        "@earendil-works/pi-ai": aiPath,
+        typebox: sdkRequire.resolve("typebox"),
         [join(root, "fleet.mjs")]: fixture,
         "./fleet.mjs": fixture,
       },
@@ -716,6 +754,13 @@ for(const goal of ['Fix tests','review this project'])test(`one explicit Accept 
       "fixture-project",
       "Refuse to test acceptance unless the work module actually uses the fake runtime",
     );
+    const compact = registeredTool.renderResult(probe, { expanded: false, isPartial: false }, theme).render(100);
+    assert.ok(compact.length <= 12);
+    assert.match(compact.join("\n"), /Budget:/);
+    assert.match(compact.join("\n"), /scout|developer/);
+    assert.doesNotMatch(compact.join("\n"), /"tasks":|Role instructions:/);
+    const expanded = registeredTool.renderResult(probe, { expanded: true, isPartial: false }, theme).render(100);
+    assert.match(expanded.join("\n"), /Exact model: fixture\/one/);
     await command(`team ${goal}`, f.ctx);
     const accepted = JSON.parse(readFileSync(evidence, "utf8"));
     assert.equal(accepted.maxCost, 5);

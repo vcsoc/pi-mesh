@@ -1,11 +1,17 @@
 """Actual Pi PTY: configure a synthetic Mesh team and CANCEL. Never approve or generate."""
-import fcntl, hashlib, json, os, pty, re, select, shutil, signal, socket, struct, tempfile, termios, time, urllib.request
+import codecs, fcntl, hashlib, json, os, pty, re, select, shutil, signal, socket, struct, tempfile, termios, time, urllib.request
 from pathlib import Path
+
+import pyte
 
 root = Path(os.environ.get('MESH_TEST_EXTENSION_ROOT', Path(__file__).resolve().parent.parent))
 home = Path(tempfile.mkdtemp(prefix='mesh-team-pty-'))
 agent = home / 'agent'
 agent.mkdir()
+sdk = Path(os.environ['PI_SDK_ROOT'])
+sdk_version = json.loads((sdk / 'package.json').read_text())['version']
+(agent / 'sdk').mkdir()
+(agent / 'sdk' / sdk_version).symlink_to(sdk.parents[2], target_is_directory=True)
 (agent / 'models.json').write_text(json.dumps({'providers': {'fixture': {'baseUrl': 'http://127.0.0.1:9/v1', 'api': 'openai-completions', 'apiKey': 'fixture-unused', 'models': [{'id': 'one', 'reasoning': False}, {'id': 'two', 'reasoning': False}]}}}))
 (agent / 'settings.json').write_text(json.dumps({'defaultProvider': 'fixture', 'defaultModel': 'one', 'defaultThinkingLevel': 'off'}))
 with socket.socket() as sock:
@@ -18,6 +24,11 @@ if pid == 0:
     os.execvpe('pi', ['pi', '--no-session', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '-e', str(root / 'index.ts')], env)
 fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 36, 140, 0, 0))
 output = b''
+screen = pyte.Screen(140, 36)
+stream = pyte.Stream(screen)
+decoder = codecs.getincrementaldecoder('utf-8')('replace')
+def visible():
+    return '\n'.join(screen.display)
 def pump(seconds):
     global output
     end = time.monotonic() + seconds
@@ -26,13 +37,15 @@ def pump(seconds):
             try: data = os.read(master, 65536)
             except OSError: break
             output += data
+            stream.feed(decoder.decode(data))
             if b'\x1b[6n' in data: os.write(master, b'\x1b[1;1R')
 def text():
     return re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', output.decode('utf-8', 'replace'))
 def choose(query, expected):
     global output
     output = b''
-    os.write(master, query.encode() + b'\r')
+    encoded = query.encode()
+    os.write(master, (b'\x1b[200~' + encoded + b'\x1b[201~' if len(encoded) > 1000 else encoded) + b'\r')
     pump(0.7)
     assert expected in text(), f'Expected {expected}; refusing further input. Received: {text()[-3000:]}'
 try:
@@ -56,7 +69,7 @@ try:
     choose('\x1b[B\x1b[B', 'Mesh · advanced (optional)')
     os.write(master, b'\x1b')
     pump(0.4)
-    choose('\x1b[B', 'Mesh • review exact execution scope')
+    choose('\x1b[B', 'Mesh work: exact details')
     assert 'NOT integrated' in text(), 'Missing sandbox limitation'
     for _ in range(15):
         os.write(master, b'\x1b[6~')
@@ -66,15 +79,40 @@ try:
     choose('\t', 'Mesh · new team')
     assert 'fixture/two' in text(), 'Model edit was lost returning from details'
     fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 64, 0, 0))
+    screen.resize(lines=24, columns=64)
     os.kill(pid, signal.SIGWINCH)
     pump(0.3)
     os.write(master, b'\x1b')
     pump(0.7)
     assert 'no work started' in text(), 'Cancel did not finish safely'
     assert not list(home.rglob('spec.json')), 'Unexpected worker specification created'
+    definition = {'mode': 'parallel', 'isolation': 'shared', 'maxCost': 2, 'tasks': [
+        {'profile': 'reviewer', 'lane': name, 'task': f'Inspect {name} only. ' + 'Exact scoped instruction. ' * 30}
+        for name in ('database-license', 'timezone', 'localization', 'database-models-costs')
+    ]}
+    choose('/mesh jobs ' + json.dumps({'action': 'run', 'definition': definition}), 'Mesh work approval')
+    assert '[Cancel]' in visible() and '[Approve & start]' in visible(), visible()
+    assert 'Budget: up to $2' in visible(), visible()
+    os.write(master, b'd')
+    pump(0.4)
+    assert 'Mesh work: exact details' in visible(), visible()
+    for _ in range(30):
+        os.write(master, b'\x1b[6~')
+        pump(0.01)
+    assert '[Cancel]' in visible() and '[Approve & start]' in visible(), visible()
+    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 40, 0, 0))
+    screen.resize(lines=12, columns=40)
+    os.kill(pid, signal.SIGWINCH)
+    pump(0.5)
+    assert '[Cancel]' in visible() and '[Approve & start]' in visible(), visible()
+    Path('/tmp/mesh-approval-visible.txt').write_text(visible())
+    os.write(master, b'\x1b')
+    pump(0.7)
+    assert not list(home.rglob('spec.json')), 'Cancel unexpectedly launched a worker'
     # Synthetic metadata only: exercise the actual Pi footer without a runner,
     # execution spec, approval or provider request.
     fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 36, 140, 0, 0))
+    screen.resize(lines=36, columns=140)
     os.kill(pid, signal.SIGWINCH)
     run_id = '11111111-1111-4111-8111-111111111111'
     run_dir = home / 'mesh/data/runs' / run_id

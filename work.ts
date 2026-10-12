@@ -1,11 +1,13 @@
 import { getAgentDir, getPackageDir, type ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { StringEnum } from '@earendil-works/pi-ai';
+import { Text } from '@earendil-works/pi-tui';
+import { workflowSummaryLines, workflowReviewLines } from './work-review.mjs';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { loadProfiles, savedWorkflows, forkContext, toolCeiling } from './workflow.mjs';
-import { launchRun, waitRun, canonicalProject, projectHash, resumeSpecification, integrationEvidence, runVerification, updateMission, listMissions, runEvents } from './fleet.mjs';
+import { launchRun, waitRun, canonicalProject, projectHash, resolveSDKFile, resumeSpecification, integrationEvidence, runVerification, updateMission, listMissions, runEvents } from './fleet.mjs';
 import { readRun, listRuns, runDirectory, enqueueControl, controlReceipt, terminal, atomicJSON, readJSON, storeLock, ownsLiveProcess } from './fleet-store.mjs';
 import { roleMemory } from './context-memory.mjs';
 import { quickWorkRequest } from './quick-work.mjs';
@@ -98,6 +100,7 @@ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, avail
   if(spec.plan.untilComplete&&spec.plan.tokenLimitMode&&spec.gatewayMode!=='routed')throw Error('Automatic continuation requires gateway routing for complete SDK request auditing. Configure /ai-gateway first; no work started.');
   const summary={project,gateway:{mode:spec.gatewayMode,confinement:'unverified',audit:'metadata-default'},scope:spec.plan.scope||'custom',workingDirectory:spec.cwd,missionId:spec.missionId,planFingerprint:createHash('sha256').update(JSON.stringify(spec.plan)).digest('hex'),contextFingerprint:createHash('sha256').update(JSON.stringify([spec.systemPrompt,spec.forkContext||''])).digest('hex'),isolation:spec.plan.isolation,context:spec.plan.context,thinkingLevel:spec.thinkingLevel,background:params.background===true,schedule:spec.plan.schedule,continuation:{untilComplete:spec.plan.untilComplete===true,unlimitedSpending:spec.plan.maxCost===null,interventions:'cancel active operation, process first, then resume',failurePolicy:'pause after three failed acceptance passes'},limits:{concurrency:spec.plan.concurrency,spawns:spec.plan.maxCalls,tokens:spec.plan.maxTokens,tokenLimitMode:spec.plan.tokenLimitMode,estimatedCost:spec.plan.maxCost,costApprovalBase:spec.costApprovalBase||0,childDeadlineMs:spec.plan.timeoutMs},steps:spec.plan.stages.map(s=>({parallel:s.parallel,retries:s.retries,when:s.when,tasks:s.tasks.map(t=>({id:t.id,role:t.profile,lane:t.lane,model:t.model,write:t.write,tools:t.tools,extensions:t.extensions,extensionTools:t.extensionTools,task:t.task,prompt:t.prompt,acceptance:t.acceptance}))}))};
   if(action==='preview')return summary;
+  spec.sdkFile=resolveSDKFile(getPackageDir(),getAgentDir());
   if(spec.plan.isolation==='worktree'&&spec.plan.stages.some(s=>s.tasks.some(t=>t.write&&!spec.resumeWorkspaces?.some(w=>w.lane===t.lane))))await preflightWorkspace(spec.cwd);
   // Only this command's private UI return can supply a grant; tool parameters cannot.
   if(approvedSummary!==undefined&&approvedSummary!==JSON.stringify(summary)) {
@@ -125,6 +128,17 @@ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, avail
   promptSnippet:'Run explicitly authorized Mesh workflows and inspect/control durable child jobs.',
   promptGuidelines:['Task complexity does not authorize delegation. Use profiles/workflows/preview without launching work. Every run/resume requires interactive user approval; no nested delegation. Report completed runtime separately from acceptance evidence.'],
   parameters:Type.Object({action:StringEnum(actions),id:Type.Optional(Type.String()),role:Type.Optional(Type.String()),workflow:Type.Optional(Type.String()),definition:Type.Optional(Type.Any({description:'Declarative workflow: tasks[{id?,profile,task,lane?,model?,extensions?:[installed agent-dir path],extensionTools?:[approved tool names],acceptance?}], mode sequence/parallel; or stages[{tasks,parallel?,retries?,when?}]. Optional isolation worktree/shared, schedule{at,everyMs,maxRuns}, untilComplete (explicit automatic checkpoint continuation), watchdog, concurrency, timeoutMs, maxCalls, maxTokens, maxCost (null permits unlimited spending only with untilComplete), context fresh/fork.'})),tasks:Type.Optional(Type.Array(Type.Object({profile:Type.String(),task:Type.String()}))),mode:Type.Optional(StringEnum(['sequence','parallel'] as const)),background:Type.Optional(Type.Boolean()),missionId:Type.Optional(Type.String()),message:Type.Optional(Type.String()),receipt:Type.Optional(Type.String()),lane:Type.Optional(Type.String()),discard:Type.Optional(Type.Boolean()),waitMs:Type.Optional(Type.Integer({minimum:1,maximum:300000}))}),
+  renderCall(params,theme){return new Text(theme.fg('toolTitle',`Mesh work: ${params.action}`),0,0);},
+  renderResult(result,{expanded,isPartial},theme){
+   if(isPartial)return new Text(theme.fg('muted','Preparing Mesh work...'),0,0);
+   const data=result.details?.result;
+   if(data&&Array.isArray(data.steps)&&data.limits&&data.project){
+    const lines=expanded?workflowReviewLines(data):workflowSummaryLines(data);
+    return new Text((expanded?lines:[...lines.slice(0,4),...lines.filter(line=>/^Checks:|^Model:|^\d+\. /.test(line)).slice(0,7),'Expand for details. Approval opens a separate dialog']).join('\n'),0,0);
+   }
+   const lines=result.content.filter(part=>part.type==='text').flatMap(part=>part.text.split('\n'));
+   return new Text((expanded||lines.length<=12?lines:[...lines.slice(0,12),'Expand tool output for the full response']).join('\n'),0,0);
+  },
   async execute(_id,params,signal,_update,ctx){const result=await operate(params,ctx,signal),text=JSON.stringify(result,null,2);return {content:[{type:'text',text:text.length<=48000?text:JSON.stringify({id:result.id,state:result.state,notice:'Output truncated; use inspect for the run and retained evidence files.',tail:text.slice(-16000)})}],details:{result}};},
  });
  pi.on('session_shutdown',async()=>{status.stop();for(const id of foreground)try{enqueueControl(getDirectory(),id,'stop')}catch{}foreground.clear();});

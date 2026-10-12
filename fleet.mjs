@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import { mkdirSync, openSync, closeSync, realpathSync, existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { atomicJSON, readJSON, readRun, runDirectory, listRuns, terminal, identifier, enqueueControl, storeLock, ownsLiveProcess } from './fleet-store.mjs';
 const runner=fileURLToPath(new URL('./runner.mjs',import.meta.url));
@@ -11,7 +11,21 @@ export function canonicalProject(cwd) {
  return root;
 }
 export function projectHash(root) {return createHash('sha256').update(`agent-mesh-project\0${process.platform==='win32'?root.toLowerCase():root}`).digest('hex')}
-export function launchRun(directory,spec,{node=process.execPath}={}) {
+export function resolveSDKFile(packageDir, agentDir) {
+ const direct = join(packageDir, 'dist', 'index.js');
+ if (existsSync(direct)) return direct;
+ const version = readJSON(join(packageDir, 'package.json')).version;
+ if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(version)) throw new Error('Cannot determine the installed Pi SDK version');
+ const prefix = join(agentDir, 'sdk', version);
+ const root = join(prefix, 'node_modules', '@earendil-works', 'pi-coding-agent');
+ const cached = join(root, 'dist', 'index.js');
+ if (existsSync(cached) && readJSON(join(root, 'package.json')).version === version) return cached;
+ throw new Error(`Standalone Pi needs a matching Node SDK for Mesh workers. Install @earendil-works/pi-coding-agent@${version} into ${prefix}`);
+}
+export function nodeExecutable(executable = process.execPath) {
+ return /^node(?:\.exe)?$/i.test(basename(executable)) ? executable : 'node';
+}
+export function launchRun(directory,spec,{execPath=process.execPath,node=nodeExecutable(execPath),spawnProcess=spawn}={}) {
  return storeLock(directory,'launch',()=>{
  const allActive=listRuns(directory).filter(ownsLiveProcess);
  if(allActive.length>=8)throw new Error('At most eight live runners across Mesh');
@@ -26,7 +40,7 @@ export function launchRun(directory,spec,{node=process.execPath}={}) {
  atomicJSON(join(dir,'spec.json'),spec);atomicJSON(join(dir,'state.json'),state);
  const log=openSync(join(dir,'runner.log'),'a',0o600);
  try {
-  const child=spawn(node,[runner,dir],{cwd:spec.cwd,detached:true,stdio:['ignore',log,log],env:{...process.env,PI_MESH_CHILD:'1'}});
+  const child=spawnProcess(node,[runner,dir],{cwd:spec.cwd,detached:true,stdio:['ignore',log,log],env:{...process.env,PI_MESH_CHILD:'1'}});
   child.once('error',error=>{state.state='failed';state.error=`Runner launch failed: ${error.message}`;atomicJSON(join(dir,'state.json'),state)});child.unref();
  } finally {closeSync(log)}
  return {id,state:'starting',project:spec.project};

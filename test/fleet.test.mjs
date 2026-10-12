@@ -4,12 +4,13 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { roleMemory, recordHandoff } from '../context-memory.mjs';
 import { roleName, allocateName, canonicalRole } from '../naming.mjs';
 import { compileWorkflow, loadProfiles, forkContext } from '../workflow.mjs';
 import { supervise, checkGate } from '../runner.mjs';
-import { launchRun, waitRun, resumeSpecification, integrationEvidence, runVerification, updateMission } from '../fleet.mjs';
+import { launchRun, waitRun, nodeExecutable, resolveSDKFile, resumeSpecification, integrationEvidence, runVerification, updateMission } from '../fleet.mjs';
 import { atomicJSON, readRun, listRuns, enqueueControl, controlReceipt, storeLock } from '../fleet-store.mjs';
 import { git, createWorkspace, workspaceEvidence, mergeWorkspace, mergeWorkspaces, cleanupWorkspace } from '../workspace.mjs';
 const options={activeTools:['read','grep','find','ls','bash','edit','write'],currentModel:'fake/model',availableModels:['fake/model']};
@@ -20,6 +21,29 @@ function fake(output='{"verdict":"pass"}',delay=0,usageTokens=12) {return async(
  let cb,resolve,aborted=false;const messages=[];
  return {messages,sessionFile:null,subscribe(fn){cb=fn;return()=>{}},async prompt(){await new Promise(r=>{resolve=r;setTimeout(r,delay)});const message={role:'assistant',stopReason:aborted?'aborted':'stop',content:[{type:'text',text:output}],usage:{input:10,output:2,totalTokens:usageTokens,cost:{total:.01}}};messages.push(message);cb({type:'message_end',message})},getLastAssistantText:()=>output,async abort(){aborted=true;resolve?.()},async steer(){},dispose(){}};
 };}
+test('a compiled Pi host launches the JavaScript runner with Node rather than passing it to Pi as a prompt', async t => {
+ const {dir,profiles}=fixture(t), spec={plan:plan(profiles),cwd:dir,project:dir,parentId:'test',systemPrompt:'test',agentDir:dir,sdkFile:fileURLToPath(new URL('./fixtures/sdk.mjs',import.meta.url))};
+ let selected;
+ const launched=launchRun(dir,spec,{execPath:join(dir,'pi'),spawnProcess:(executable,args,options)=>{selected=executable;return spawn(executable,args,options)}});
+ const finished=await waitRun(dir,launched.id,{timeoutMs:10000});
+ assert.equal(selected,'node');
+ assert.equal(finished.state,'completed');
+ assert.ok(finished.steps[0].sessionFile);
+ assert.equal(nodeExecutable(process.execPath),process.execPath);
+});
+test('standalone Pi finds only a matching cached SDK and missing SDKs fail before worker launch', t => {
+ const {dir}=fixture(t), host=join(dir,'host'), agent=join(dir,'agent');
+ mkdirSync(host,{recursive:true});writeFileSync(join(host,'package.json'),JSON.stringify({version:'1.2.3'}));
+ assert.throws(()=>resolveSDKFile(host,agent),/matching Node SDK/);
+ const cached=join(agent,'sdk','1.2.3','node_modules','@earendil-works','pi-coding-agent');
+ mkdirSync(join(cached,'dist'),{recursive:true});writeFileSync(join(cached,'dist','index.js'),'export const fixture = true;');
+ writeFileSync(join(cached,'package.json'),JSON.stringify({version:'1.2.4'}));
+ assert.throws(()=>resolveSDKFile(host,agent),/matching Node SDK/);
+ writeFileSync(join(cached,'package.json'),JSON.stringify({version:'1.2.3'}));
+ assert.equal(resolveSDKFile(host,agent),join(cached,'dist','index.js'));
+ mkdirSync(join(host,'dist'));writeFileSync(join(host,'dist','index.js'),'export const fixture = true;');
+ assert.equal(resolveSDKFile(host,agent),join(host,'dist','index.js'));
+});
 test('detached real Node runner completes with retained sessions and explicit continuation',async t=>{
  const {dir,profiles}=fixture(t),spec={plan:plan(profiles),cwd:dir,project:dir,parentId:'test',systemPrompt:'test',agentDir:dir,sdkFile:fileURLToPath(new URL('./fixtures/sdk.mjs',import.meta.url))};
  const launched=launchRun(dir,spec),finished=await waitRun(dir,launched.id,{timeoutMs:10000});

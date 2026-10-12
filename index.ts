@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createActivity } from "./activity.mjs";
 import { registerWork } from "./work.ts";
 import { diagnoseMesh } from './doctor.mjs';
-import { canonicalProject } from './fleet.mjs';
+import { canonicalProject, nodeExecutable } from './fleet.mjs';
 import { listRuns, enqueueControl, terminal } from './fleet-store.mjs';
 import { roleMemory, recordHandoff, messageText } from './context-memory.mjs';
 import { createHash, randomBytes } from "node:crypto";
@@ -98,7 +98,7 @@ export default function agentMesh(pi: ExtensionAPI) {
 		if (starting) return starting;
 		const deadline = Date.now() + 10000;
 		starting = (async () => {
-			const executable = /^node(?:\.exe)?$/i.test(basename(process.execPath)) ? process.execPath : "node";
+			const executable = nodeExecutable();
 			const child = spawn(executable, [brokerPath, configPath], { detached: true, stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
 			let failure = "", stderr = "";
 			child.stderr?.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-2000); });

@@ -6,6 +6,39 @@ export const plain = (value) =>
   );
 
 // Presentation only. The compiled specification remains the execution authority.
+export function workflowSummaryLines(summary) {
+  const workers = (summary.steps || []).flatMap(stage => stage.tasks);
+  const models = [...new Set(workers.map(task => plain(task.model)))];
+  const limits = summary.limits || {};
+  const checks = workers.reduce((count, task) => count + (task.acceptance?.length || 0), 0);
+  const lines = [
+    `Project: ${summary.project}`,
+    `Work: ${workers.length} workers, up to ${limits.concurrency ?? 1} at once; ${summary.background ? 'background' : 'foreground'}`,
+    `Files: ${summary.isolation === 'shared' ? 'SHARED, edits your current files' : 'isolated Git worktrees'}`,
+    limits.estimatedCost === null ? 'Budget: UNLIMITED, no total spending ceiling' : `Budget: up to $${limits.estimatedCost} estimated`,
+    `Tokens: ${limits.tokens == null ? 'audit only, no ceiling' : limits.tokens.toLocaleString('en-US')}; child spawns: ${limits.spawns}; timeout: ${Math.round((limits.childDeadlineMs || 0) / 60000)} min per worker`,
+    `Continuation: ${summary.continuation?.untilComplete ? 'automatic until completion or stopped' : 'pauses at checkpoints; no automatic continuation'}`,
+    'OpenShell NOT integrated: host permissions apply, no OS sandbox',
+    'Parent approval hooks are not inherited; no automatic commit or push',
+    checks ? `Checks: ${checks} explicit gates; passing is not independent certification` : 'Checks: none defined; completion will remain UNVERIFIED',
+    ...(models.length === 1 ? [`Model: ${models[0]}`] : []),
+    '',
+    'WORKERS',
+    ...workers.flatMap((task, index) => {
+      const label = plain(task.lane || task.id).replace(/[-_]/g, ' ');
+      const brief = plain(task.task).replace(/[\r\n\t]+/g, ' ').split(/(?<=[.!?])\s/)[0];
+      return [
+        `${index + 1}. ${label} (${task.role}; ${task.write ? 'may write' : task.write === false ? 'read only' : 'write permission unspecified'})`,
+        `   ${brief.length > 180 ? brief.slice(0, 177) + '...' : brief}`,
+        ...(models.length > 1 ? [`   Model: ${task.model}`] : []),
+      ];
+    }),
+    '',
+    'Summaries are shortened. Open details for exact tasks, tools and checks',
+  ];
+  return lines.flatMap(line => plain(line).split('\n'));
+}
+
 export function workflowReviewLines(summary) {
   const lines = [
     "MESH EXECUTION REVIEW",

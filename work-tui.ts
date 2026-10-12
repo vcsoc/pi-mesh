@@ -6,7 +6,38 @@ import {
   truncateToWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { plain, workflowReviewLines } from "./work-review.mjs";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  plain,
+  workflowReviewLines,
+  workflowSummaryLines,
+} from "./work-review.mjs";
+
+type ReviewDecision = "approve" | "back" | "cancel";
+type ReviewSummary = Readonly<{
+  project: string;
+  isolation: string;
+  background: boolean;
+  limits: Readonly<{
+    spawns: number;
+    tokens: number | null;
+    concurrency: number;
+    estimatedCost: number | null;
+    childDeadlineMs: number;
+  }>;
+  steps: readonly Readonly<{
+    parallel: boolean;
+    tasks: readonly Readonly<{
+      id: string;
+      role: string;
+      lane: string;
+      model: string;
+      task: string;
+      write?: boolean;
+      acceptance?: readonly unknown[];
+    }>[];
+  }>[];
+}>;
 
 type Item = { value: string; label: string; description?: string };
 const oneLine = (value: unknown) => plain(value).replace(/[\r\n\t]/g, " ");
@@ -109,8 +140,8 @@ export async function workPicker(
 }
 
 export async function reviewWork(
-  ctx: any,
-  summary: any,
+  ctx: ExtensionContext,
+  summary: ReviewSummary,
   signal?: AbortSignal,
   allowBack = false,
   readOnly = false,
@@ -125,84 +156,173 @@ export async function reviewWork(
     }))
       ? "approve"
       : "cancel";
-  return ctx.ui.custom((tui: any, theme: any, _keys: any, done: any) => {
-    let offset = 0,
-      selected = 0,
-      finished = false;
-    const buttons = readOnly
-      ? ["back"]
-      : allowBack
-        ? ["back", "cancel", "approve"]
-        : ["cancel", "approve"];
-    const finish = (value: string) => {
-      if (finished) return;
-      finished = true;
-      signal?.removeEventListener("abort", abort);
-      done(value);
-    };
-    const abort = () => finish("cancel");
-    signal?.addEventListener("abort", abort, { once: true });
-    if (signal?.aborted) queueMicrotask(abort);
-    return {
-      render(width: number) {
-        const height = Math.max(1, (tui.terminal.rows || 24) - 7);
-        const lines = text.flatMap((line) =>
-          wrapTextWithAnsi(line || " ", Math.max(1, width)),
+  const overview = workflowSummaryLines(summary);
+  return ctx.ui.custom<ReviewDecision>(
+    (tui, theme, _keys, done) => {
+      let offset = 0,
+        selected = 0,
+        finished = false,
+        details = readOnly,
+        lastWidth = 80;
+      const buttons: readonly ReviewDecision[] = readOnly
+        ? ["back"]
+        : allowBack
+          ? ["back", "cancel", "approve"]
+          : ["cancel", "approve"];
+      const labels = {
+        back: "Back to edit",
+        cancel: "Cancel",
+        approve: "Approve & start",
+      };
+      const height = () =>
+        Math.max(
+          3,
+          Math.min(
+            28,
+            (tui.terminal.rows || 24) - 2,
+            Math.floor((tui.terminal.rows || 24) * 0.85),
+          ),
         );
-        offset = Math.min(offset, Math.max(0, lines.length - height));
-        return [
-          theme.fg(
-            "accent",
-            truncateToWidth("Mesh • review exact execution scope", width),
-          ),
-          ...lines.slice(offset, offset + height),
-          theme.fg(
-            "dim",
-            truncateToWidth(
-              `Lines ${offset + 1}–${Math.min(lines.length, offset + height)} of ${lines.length} • ↑↓/PgUp/PgDn scroll`,
-              width,
-            ),
-          ),
-          truncateToWidth(
-            `[ ${buttons[selected] === "approve" ? "APPROVE & START" : buttons[selected].toUpperCase()} ] (${selected + 1}/${buttons.length})`,
-            width,
-          ),
-          theme.fg(
-            "warning",
-            truncateToWidth(
-              "Tab chooses action • Enter confirms chosen action • Esc cancels",
-              width,
-            ),
-          ),
-        ];
-      },
-      invalidate() {},
-      dispose() {
+      const canReview = () => height() >= 7 && lastWidth >= 20;
+      const finish = (value: ReviewDecision) => {
+        if (finished || (value === "approve" && !canReview())) return;
+        finished = true;
         signal?.removeEventListener("abort", abort);
-      },
-      handleInput(data: string) {
-        if (matchesKey(data, Key.escape)) return finish("cancel");
-        if (matchesKey(data, Key.enter)) return finish(buttons[selected]);
-        if (matchesKey(data, Key.tab) || matchesKey(data, Key.right))
-          selected = (selected + 1) % buttons.length;
-        else if (
-          matchesKey(data, Key.shift("tab")) ||
-          matchesKey(data, Key.left)
-        )
-          selected = (selected + buttons.length - 1) % buttons.length;
-        else if (matchesKey(data, Key.down)) offset++;
-        else if (matchesKey(data, Key.up)) offset = Math.max(0, offset - 1);
-        else if (matchesKey(data, Key.pageDown))
-          offset += Math.max(1, (tui.terminal.rows || 24) - 8);
-        else if (matchesKey(data, Key.pageUp))
-          offset = Math.max(
-            0,
-            offset - Math.max(1, (tui.terminal.rows || 24) - 8),
+        done(value);
+      };
+      const abort = () => finish("cancel");
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) queueMicrotask(abort);
+      return {
+        render(width: number) {
+          lastWidth = width;
+          const total = height();
+          const spacious = total >= 9;
+          const showTitle = total > buttons.length;
+          const showHint = total > buttons.length + Number(showTitle);
+          const footer = buttons.length + (spacious ? 3 : Number(showHint));
+          const capacity = Math.max(0, total - footer - Number(showTitle));
+          const lines = (
+            canReview()
+              ? details
+                ? text
+                : overview
+              : ["Resize terminal to review safely"]
+          ).flatMap((line) =>
+            wrapTextWithAnsi(line || " ", Math.max(1, width)),
           );
-        tui.requestRender();
+          offset = Math.min(offset, Math.max(0, lines.length - capacity));
+          const body = lines.slice(offset, offset + capacity);
+          const actions = buttons.map((button, index) =>
+            theme.fg(
+              index === selected ? "accent" : "muted",
+              truncateToWidth(
+                `${index === selected ? ">" : " "} [${button === "approve" && !canReview() ? "Approve (resize first)" : labels[button]}]`,
+                width,
+              ),
+            ),
+          );
+          return [
+            ...(showTitle
+              ? [
+                  theme.fg(
+                    "accent",
+                    truncateToWidth(
+                      details
+                        ? "Mesh work: exact details"
+                        : "Mesh work approval",
+                      width,
+                    ),
+                  ),
+                ]
+              : []),
+            ...body,
+            ...Array.from(
+              { length: Math.max(0, capacity - body.length) },
+              () => "",
+            ),
+            ...(spacious
+              ? [
+                  theme.fg(
+                    "dim",
+                    truncateToWidth(
+                      `${details ? "Details" : "Summary"}: ${offset + 1}-${Math.min(lines.length, offset + capacity)} of ${lines.length}`,
+                      width,
+                    ),
+                  ),
+                ]
+              : []),
+            ...actions,
+            ...(spacious
+              ? [
+                  theme.fg(
+                    "muted",
+                    truncateToWidth(
+                      "Tab: action  Enter: select  Esc: cancel",
+                      width,
+                    ),
+                  ),
+                ]
+              : []),
+            ...(showHint
+              ? [
+                  theme.fg(
+                    "dim",
+                    truncateToWidth(
+                      spacious
+                        ? `d: ${details ? "summary" : "exact details"}  Up/Down/PgUp/PgDn: scroll`
+                        : "Tab/Enter  d: details  Esc",
+                      width,
+                    ),
+                  ),
+                ]
+              : []),
+          ].map((line) =>
+            theme.bg("toolPendingBg", truncateToWidth(line, width, "", true)),
+          );
+        },
+        invalidate() {},
+        dispose() {
+          signal?.removeEventListener("abort", abort);
+        },
+        handleInput(data: string) {
+          if (matchesKey(data, Key.escape)) return finish("cancel");
+          if (matchesKey(data, Key.enter)) return finish(buttons[selected]);
+          if (matchesKey(data, "d")) {
+            details = !details;
+            offset = 0;
+          } else if (matchesKey(data, Key.tab) || matchesKey(data, Key.right))
+            selected = (selected + 1) % buttons.length;
+          else if (
+            matchesKey(data, Key.shift("tab")) ||
+            matchesKey(data, Key.left)
+          )
+            selected = (selected + buttons.length - 1) % buttons.length;
+          else if (matchesKey(data, Key.home)) offset = 0;
+          else if (matchesKey(data, Key.end)) offset = Number.MAX_SAFE_INTEGER;
+          else if (matchesKey(data, Key.down)) offset++;
+          else if (matchesKey(data, Key.up)) offset = Math.max(0, offset - 1);
+          else if (matchesKey(data, Key.pageDown))
+            offset += Math.max(1, height() - buttons.length - 4);
+          else if (matchesKey(data, Key.pageUp))
+            offset = Math.max(
+              0,
+              offset - Math.max(1, height() - buttons.length - 4),
+            );
+          tui.requestRender();
+        },
+      };
+    },
+    {
+      overlay: true,
+      overlayOptions: {
+        anchor: "center",
+        width: 100,
+        maxHeight: "85%",
+        margin: 1,
       },
-    };
-  });
+    },
+  );
 }
 
 // Editing is a private draft. The caller must compile afresh and obtain reviewWork approval.
@@ -213,7 +333,7 @@ export async function editTeamRequest(ctx: any, original: any, options: any) {
     );
   const request = structuredClone(original),
     definition = request.definition;
-  if(!Object.hasOwn(definition,'maxTokens'))definition.maxTokens=null;
+  if (!Object.hasOwn(definition, "maxTokens")) definition.maxTokens = null;
   const choose = (title: string, values: string[]) =>
     workPicker(
       ctx,
@@ -287,7 +407,9 @@ export async function editTeamRequest(ctx: any, original: any, options: any) {
         label,
         description:
           definition[key] === null
-            ? (key==='maxTokens'?'AUDIT ONLY — no token ceiling':'UNLIMITED — no total spending ceiling')
+            ? key === "maxTokens"
+              ? "AUDIT ONLY — no token ceiling"
+              : "UNLIMITED — no total spending ceiling"
             : String(definition[key] ?? fallback),
       });
     const selected = await workPicker(
@@ -417,18 +539,19 @@ export async function editTeamRequest(ctx: any, original: any, options: any) {
       } else if (limits[selected]) {
         const value = await edit(
           limits[selected][0] +
-            (selected==='maxTokens'
+            (selected === "maxTokens"
               ? ' — number or "unlimited" (audit only)'
               : selected === "maxCost" && definition.untilComplete
-              ? ' — number or explicit "unlimited"'
-              : ""),
+                ? ' — number or explicit "unlimited"'
+                : ""),
           definition[selected] === null
             ? "unlimited"
             : (definition[selected] ?? limits[selected][1]),
         );
         if (value !== undefined) {
           if (
-            (selected==='maxTokens'||selected === "maxCost" && definition.untilComplete) &&
+            (selected === "maxTokens" ||
+              (selected === "maxCost" && definition.untilComplete)) &&
             value.trim() === "unlimited"
           )
             definition[selected] = null;

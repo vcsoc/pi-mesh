@@ -22,6 +22,24 @@ Then `/reload` again. `pi list` shows the installed Git checkout. No manual copy
 
 Developers clone this repository separately, make changes here and push to `main`; machines update their Pi-managed Git checkout with the command above. Do not edit installed checkouts or reintroduce a runtime copy in `mypi`.
 
+## Compiled Pi and background runners
+
+Background runners use Node, not the compiled Pi executable. When Pi's bundled SDK has no physical `dist/index.js`, install the matching SDK in its private versioned cache:
+
+```sh
+PI_VERSION="$(pi --version)"
+SDK_PREFIX="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sdk/$PI_VERSION"
+npm install --prefix "$SDK_PREFIX" --ignore-scripts --no-audit --no-fund "@earendil-works/pi-coding-agent@$PI_VERSION"
+```
+
+The cache must match the installed Pi version exactly. Reload after installing or updating the extension. Installation does not resume interrupted runs or expand existing approvals
+
+## Work approval
+
+Tool-driven work approvals open a compact overlay with a summary first. Approve and Cancel stay outside the scrolling content. Press `d` for the full plan, use arrows or Page Up/Page Down to scroll, and Tab to select an action. Cancel is the default. A terminal too small to display the controls cannot approve work
+
+The collapsed tool transcript stays short; expand it for the full result. Runtime completion remains separate from acceptance evidence
+
 ## Version 2.7.4
 
 ## Token audit and AI gateway baseline
@@ -69,7 +87,7 @@ The native Pi footer shows the latest same-project run's ID, state, worker/activ
 
 `/mesh dashboard` still opens the web dashboard; `/mesh jobs list` inspects runs. Bare `/mesh` no longer opens a browser. Empty command completion shows only the main commands; all existing expert subcommands remain available when typed. TUI-only entry points refuse RPC/print mode without launching anything.
 
-Validation: `npm run check`, `python3 test/team-tui-smoke.py`. Native smoke uses isolated state/synthetic models and cancels. Actual launch approval is exercised only against a verified mocked launch boundary; no live worker/model was started. See `patches/SIMPLE-UI.md` for the separately qualified installed-runtime patch.
+Validation: `npm run check`, `uv run --no-project --with pyte==0.8.2 python test/team-tui-smoke.py`. Native smoke uses isolated state/synthetic models and cancels. Actual launch approval is exercised only against a verified mocked launch boundary; no live worker/model was started. See `patches/SIMPLE-UI.md` for the separately qualified installed-runtime patch.
 
 ## Advanced and installed-runtime compatibility
 
