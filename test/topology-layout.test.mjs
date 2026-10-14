@@ -10,7 +10,7 @@ test('project neighbourhoods and every label are separate; verified children lin
   const agents = fixture(), channels = Array.from({ length: 5 }, (_, index) => ({ name: `project-${index}` }));
   channels.push({ name: 'user', userOnly: true });
   const layout = neighbourhoodLayout(agents, channels), nodes = [...layout.positions.values()];
-  assert.equal(nodes.length, agents.length + channels.length);
+  assert.equal(nodes.length, agents.length + channels.length + layout.regions.length);
   assert.equal(layout.parentLinks.length, 60);
   for (const [index, region] of layout.regions.entries()) {
     for (const other of layout.regions.slice(index + 1)) assert.equal(overlaps(region, other), false);
@@ -29,11 +29,11 @@ test('identical project names stay separate and missing parents do not invent ch
   const layout = neighbourhoodLayout(agents, []);
   assert.equal(layout.regions.length, 2);
   assert.equal(layout.parentLinks.length, 0);
-  assert.equal(layout.positions.size, agents.length);
+  assert.equal(layout.positions.size, agents.length + layout.regions.length);
   assert.equal(neighbourhoodLayout([], []).positions.size, 0);
 });
 test('large neighbourhood layout completes without an iterative force simulation', () => {
   const start = performance.now(), layout = neighbourhoodLayout(fixture(20, 24), []);
-  assert.equal(layout.positions.size, 500);
+  assert.equal(layout.positions.size, 520);
   assert.ok(performance.now() - start < 500, '500 agents should lay out within a conservative 500ms budget');
 });

@@ -15,7 +15,7 @@ import { truncateHead, type ExtensionAPI, type ExtensionContext } from "@earendi
 import { Container } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
-const VERSION = "2.7.5";
+const VERSION = "2.7.6";
 const DEFAULT_PORT = 47831;
 const MESH_TOOLS = ["agent_mesh_send", "agent_mesh_agents", "agent_mesh_history", "agent_mesh_channels"];
 const extensionDir = dirname(fileURLToPath(import.meta.url));

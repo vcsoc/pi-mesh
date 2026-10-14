@@ -9,7 +9,7 @@ import { runEvents } from './fleet.mjs';
 import { canonicalRole, roleName, allocateName } from './naming.mjs';
 import { UsageStore } from './usage.mjs';
 
-const VERSION = "2.7.5";
+const VERSION = "2.7.6";
 const MAX_BODY = 64 * 1024;
 const MAX_MESSAGE = 20_000;
 const MAX_CHANNEL = 64;
@@ -354,7 +354,8 @@ const server = createServer(async (request, response) => {
         if (method === 'GET' && url.pathname === '/management-workbench.css') return asset(response,'management-workbench.css','text/css; charset=utf-8');
         if (method === 'GET' && url.pathname === '/policy-schema.mjs') return asset(response,'security/policy-schema.mjs','text/javascript; charset=utf-8');
 		if (method === "GET" && url.pathname === "/dashboard.js") return asset(response, "dashboard.js", "text/javascript; charset=utf-8");
-        if (method === 'GET' && url.pathname === '/topology-layout.mjs') return asset(response,'topology-layout.mjs','text/javascript; charset=utf-8');
+        const topologyAssets={'/topology-layout.mjs':'topology-layout.mjs','/topology-model.mjs':'topology-model.mjs','/topology-structured.mjs':'topology-structured.mjs','/topology-renderer.mjs':'topology-renderer.mjs','/vendor/sigma-graphology.mjs':'vendor/sigma-graphology.mjs'};
+        if (method === 'GET' && Object.hasOwn(topologyAssets,url.pathname)) return asset(response,topologyAssets[url.pathname],'text/javascript; charset=utf-8');
 		if (method === 'GET' && url.pathname === '/fleet-panel.js') return asset(response,'fleet-panel.js','text/javascript; charset=utf-8');
 		if (method === 'GET' && url.pathname === '/usage-panel.js') return asset(response,'usage-panel.js','text/javascript; charset=utf-8');
 		if (method === 'GET' && url.pathname === '/orchestration') return asset(response,'ORCHESTRATION.md','text/plain; charset=utf-8');

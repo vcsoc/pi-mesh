@@ -22,6 +22,16 @@ Then `/reload` again. `pi list` shows the installed Git checkout. No manual copy
 
 Developers clone this repository separately, make changes here and push to `main`; machines update their Pi-managed Git checkout with the command above. Do not edit installed checkouts or reintroduce a runtime copy in `mypi`.
 
+## New in 2.7.6 — Sigma.js topology
+
+The topology now uses **[Sigma.js 4.0.2](https://github.com/jacomyal/sigma.js)** (WebGL2) and **Graphology 0.26.0**, not custom SVG drawing. Project hubs contain channel hubs; unique agent points are spaced on deterministic satellite rings around their joined active channel, or their project if no local channel applies. Extra memberships and registered parent/child links add edges, not duplicate agent points. Identically named projects remain separate by project hash/path. Structured overview also includes every project; scoped orbital view retains its channel and all recorded members.
+
+Click a project hub to focus its neighbourhood. Click an agent/channel to read its conversation; right-click for existing actions. Pan, mouse/trackpad/Safari zoom, Fit, search, live status/lineage, theme, workspace shortcuts and orbital controls are retained. Sigma draws the actual nodes, readable labels and solid/dashed relationships; safe HTML controls provide keyboard accessibility. Unavailable WebGL2 produces an explicit accessible-list fallback, never a fake Sigma graph. One renderer/context is updated incrementally; heartbeat-only refreshes do not reconstruct the graph or history.
+
+Assets are self-hosted and authenticated under the existing CSP: no CDN, external graph service or runtime package build. The pinned browser bundle and license notices live in `vendor/`. Maintainers regenerate it with `npm ci --legacy-peer-deps --ignore-scripts && npm run build:topology`; host-provided Pi packages remain peers, never bundled. Layout/model/renderer sources are `topology-layout.mjs`, `topology-structured.mjs`, `topology-model.mjs` and `topology-renderer.mjs`.
+
+**Activation:** update with `pi update https://github.com/vcsoc/pi-mesh.git`. Activate the new authenticated assets only with an authorized, quiescent broker restart and private state preserved; package updates never authorize work/history replay. Refresh the dashboard afterwards; run `/reload` in open Pi sessions after current work to load 2.7.6 handlers.
+
 ## New in 2.7.5 — responsive dashboard and daily usage
 
 Unchanged heartbeats no longer rebuild message history, controls or tabs. Message rows are reconciled by identity; live-event bursts are coalesced, hidden dashboard/fleet polling stops, and scroll/focus/selection are preserved. Existing project neighbourhoods, parent/worker lineage, reviews and native Pi queuing are retained.
@@ -48,7 +58,7 @@ Tool-driven work approvals open the half-height MESH EXECUTION REVIEW panel abov
 
 The collapsed tool transcript stays short; expand it for the full result. Runtime completion remains separate from acceptance evidence
 
-## Version 2.7.5
+## Version 2.7.6
 
 ## Token audit and AI gateway baseline
 

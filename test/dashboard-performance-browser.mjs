@@ -2,6 +2,7 @@
 // PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node test/dashboard-performance-browser.mjs
 // MESH_DASHBOARD_ROOT selects an installed/baseline checkout; MESH_PERF_BASELINE=1 records old behavior.
 import assert from 'node:assert/strict';
+import {topologyAssets} from './topology-assets.mjs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +14,7 @@ const agents=Array.from({length:25},(_,i)=>({id:`a${i}`,name:`Agent ${String(i).
 const channels=Array.from({length:23},(_,i)=>({name:i===22?'user':`project-${i}`,aliases:i===0?['old-project-0']:[],userOnly:i===22,memberCount:agents.filter(a=>a.channels.includes(`project-${i}`)).length,memberNames:agents.filter(a=>a.channels.includes(`project-${i}`)).map(a=>a.name)}));
 const history=Array.from({length:1000},(_,i)=>({id:i+1,fromAgentId:`a${i%25}`,fromName:`Agent ${String(i%25).padStart(2,'0')}`,fromType:'agent',scopeChannel:i%22===0?'OLD-PROJECT-0':`project-${i%22}`,destination:{type:'agent',id:`a${(i+1)%25}`,name:`Agent ${String((i+1)%25).padStart(2,'0')}`},recipientAgentIds:[`a${(i+1)%25}`],kind:'message',timestamp:'2026-01-01T10:00:00Z',content:`Fixture message ${i+1}\n${'Long coordination history. '.repeat(100)}`}));
 const state={agents,channels,messages:history.slice(-250),totalMessages:history.length,policy:{enabled:true,blockedProjects:[]}};
-const files={'/':'dashboard.html','/dashboard.js':'dashboard.js','/topology-layout.mjs':'topology-layout.mjs','/dashboard.css':'dashboard.css','/fleet-panel.js':'fleet-panel.js','/usage-panel.js':'usage-panel.js','/management-workbench.js':'management-workbench.js','/management-workbench.css':'management-workbench.css','/policy-schema.mjs':'security/policy-schema.mjs'};
+const files={...topologyAssets,'/':'dashboard.html','/dashboard.js':'dashboard.js','/topology-layout.mjs':'topology-layout.mjs','/dashboard.css':'dashboard.css','/fleet-panel.js':'fleet-panel.js','/usage-panel.js':'usage-panel.js','/management-workbench.js':'management-workbench.js','/management-workbench.css':'management-workbench.css','/policy-schema.mjs':'security/policy-schema.mjs'};
 try{
  const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[],posts=[];let stateRequests=0,fleetRequests=0,inflight=0,maxInflight=0,delay=0;
  page.on('pageerror',e=>errors.push(e.message));
@@ -63,7 +64,7 @@ try{
   const beforeHidden=stateRequests;await page.evaluate(()=>{window.freezePolling=false;Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));for(let i=0;i<20;i++)window.fixtureEvents.emit()});await page.waitForTimeout(1800);assert.equal(stateRequests,beforeHidden);assert.equal(fleetRequests,beforeFleet,'active fleet polling also stops in background tabs');
   await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'))});await page.waitForFunction(()=>document.querySelector('#connection').textContent==='Connected');await page.waitForTimeout(150);assert.ok(stateRequests>beforeHidden);assert.ok(fleetRequests>beforeFleet);await page.locator('[data-view="all"]').click();
   // Correction of an existing message is not mistaken for an unchanged heartbeat.
-  state.messages.at(-1).content='Corrected fixture message';await page.evaluate(()=>refresh());assert.match(await page.locator('[data-message-id="1001"]').textContent(),/Corrected fixture message/);
+  state.messages.at(-1).content='Corrected fixture message';await page.waitForFunction(()=>!polling);await page.evaluate(()=>refresh());await page.waitForFunction(()=>document.querySelector('[data-message-id="1001"]').textContent.includes('Corrected fixture message'));assert.match(await page.locator('[data-message-id="1001"]').textContent(),/Corrected fixture message/);
   await page.locator('[data-message-id="1001"] .message-body').click();assert.equal(await page.locator('[data-message-id="1001"]').getAttribute('aria-current'),'true');await page.keyboard.press('ArrowLeft');assert.equal(await page.locator('[data-message-id="1000"]').getAttribute('aria-current'),'true');
   // Auto-follow reaches the real end of a newly rendered long message, not only its estimated offscreen height.
   await page.locator('#auto-scroll').check();await page.waitForTimeout(400);state.messages=[...state.messages.slice(1),{...next,id:1002,content:'New long message. '.repeat(1000)}];state.totalMessages++;await page.evaluate(()=>refresh());await page.waitForTimeout(150);const bottomGap=await page.locator('#timeline-main').evaluate(n=>n.scrollHeight-n.clientHeight-n.scrollTop);assert.ok(bottomGap<2,`auto-scroll missed the end by ${bottomGap}px`);

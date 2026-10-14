@@ -1,5 +1,6 @@
 // Optional isolated browser coverage backed by the real usage parser; no running Mesh or model calls.
 import assert from 'node:assert/strict';
+import {topologyAssets} from './topology-assets.mjs';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -21,7 +22,7 @@ try{
   if(route.request().method()==='POST'){posts.push(path);return route.fulfill({json:{}})}
   if(path==='/api/state')return route.fulfill({json:{agents,channels,messages:[],totalMessages:0,policy:{enabled:true,blockedProjects:[]}}});
   if(path==='/api/usage'){requests.push(Object.fromEntries(url.searchParams));try{return route.fulfill({json:await store.query(agents,channels,url.searchParams)})}catch(error){return route.fulfill({status:400,json:{error:{message:error.message}}})}}
-  const files={'/':'dashboard.html','/dashboard.js':'dashboard.js','/topology-layout.mjs':'topology-layout.mjs','/dashboard.css':'dashboard.css','/fleet-panel.js':'fleet-panel.js','/usage-panel.js':'usage-panel.js','/management-workbench.js':'management-workbench.js','/management-workbench.css':'management-workbench.css','/policy-schema.mjs':'security/policy-schema.mjs'};
+  const files={...topologyAssets,'/':'dashboard.html','/dashboard.js':'dashboard.js','/topology-layout.mjs':'topology-layout.mjs','/dashboard.css':'dashboard.css','/fleet-panel.js':'fleet-panel.js','/usage-panel.js':'usage-panel.js','/management-workbench.js':'management-workbench.js','/management-workbench.css':'management-workbench.css','/policy-schema.mjs':'security/policy-schema.mjs'};
   if(files[path])return route.fulfill({body:await readFile(resolve(root,files[path])),contentType:path.endsWith('.css')?'text/css':/\.(js|mjs)$/.test(path)?'text/javascript':'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"}});
   return route.fulfill({status:404,body:''});
  });

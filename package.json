@@ -1,14 +1,27 @@
 {
   "name": "pi-mesh",
-  "version": "2.7.5",
+  "version": "2.7.6",
   "private": true,
   "type": "module",
   "description": "Native Pi Mesh coordination, dashboard and explicitly approved local workflows",
-  "repository": { "type": "git", "url": "https://github.com/vcsoc/pi-mesh.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vcsoc/pi-mesh.git"
+  },
   "homepage": "https://github.com/vcsoc/pi-mesh",
-  "keywords": ["pi-package", "pi", "mesh"],
-  "engines": { "node": ">=22.19.0" },
-  "pi": { "extensions": ["./index.ts"] },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "mesh"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
@@ -16,9 +29,15 @@
     "typebox": "*"
   },
   "scripts": {
+    "build:topology": "node scripts/build-topology.mjs",
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
-    "test:browser": "node test/workbench-browser.mjs && node test/management-browser.mjs && node test/dashboard-performance-browser.mjs && node test/usage-browser.mjs",
+    "test:browser": "node test/workbench-browser.mjs && node test/management-browser.mjs && node test/dashboard-performance-browser.mjs && node test/usage-browser.mjs && node test/topology-browser.mjs",
     "test:queue:tui": "python3 test/input-queue-tui-smoke.py",
-    "check": "node --check broker.mjs && node --check dashboard.js && node --check help.js && node --check runner.mjs && node --check fleet-panel.js && node --check usage-panel.js && node --check usage.mjs && node --check management-workbench.js && npm test"
+    "check": "node --check broker.mjs && node --check dashboard.js && node --check help.js && node --check runner.mjs && node --check fleet-panel.js && node --check usage-panel.js && node --check usage.mjs && node --check management-workbench.js && node --check topology-model.mjs && node --check topology-renderer.mjs && node --check topology-structured.mjs && npm test"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "graphology": "0.26.0",
+    "sigma": "4.0.2"
   }
 }

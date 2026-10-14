@@ -1,0 +1,1 @@
+export const topologyAssets={'/topology-layout.mjs':'topology-layout.mjs','/topology-model.mjs':'topology-model.mjs','/topology-structured.mjs':'topology-structured.mjs','/topology-renderer.mjs':'topology-renderer.mjs','/vendor/sigma-graphology.mjs':'vendor/sigma-graphology.mjs'};
