@@ -7,8 +7,9 @@ import { fileURLToPath } from "node:url";
 import { listRuns, readRun, enqueueControl, controlReceipt } from './fleet-store.mjs';
 import { runEvents } from './fleet.mjs';
 import { canonicalRole, roleName, allocateName } from './naming.mjs';
+import { UsageStore } from './usage.mjs';
 
-const VERSION = "2.7.4";
+const VERSION = "2.7.5";
 const MAX_BODY = 64 * 1024;
 const MAX_MESSAGE = 20_000;
 const MAX_CHANNEL = 64;
@@ -337,6 +338,7 @@ function asset(response, name, type) { const path = join(extensionDir, name); re
 const securityDrafts = new PolicyDrafts(join(dataDir, 'security-drafts'));
 const securityScopes = () => [{id:'',label:'Mesh default — draft only'}, ...[...new Map(Object.values(agents).map(agent => [agent.projectHash, {id:agent.projectHash,label:`${agent.projectName} · ${agent.cwd}`}])).values()].filter(item => item.id)];
 const subscribers = new Set();
+const usageStore = new UsageStore();
 const displayPresence = agent => {if(!agent)return '';const {lastSeenAt,lastAck,registeredAt,...display}=publicAgent(agent);return JSON.stringify(display)};
 const server = createServer(async (request, response) => {
 	try {
@@ -354,6 +356,7 @@ const server = createServer(async (request, response) => {
 		if (method === "GET" && url.pathname === "/dashboard.js") return asset(response, "dashboard.js", "text/javascript; charset=utf-8");
         if (method === 'GET' && url.pathname === '/topology-layout.mjs') return asset(response,'topology-layout.mjs','text/javascript; charset=utf-8');
 		if (method === 'GET' && url.pathname === '/fleet-panel.js') return asset(response,'fleet-panel.js','text/javascript; charset=utf-8');
+		if (method === 'GET' && url.pathname === '/usage-panel.js') return asset(response,'usage-panel.js','text/javascript; charset=utf-8');
 		if (method === 'GET' && url.pathname === '/orchestration') return asset(response,'ORCHESTRATION.md','text/plain; charset=utf-8');
 		if (method === "GET" && url.pathname === "/help") return asset(response, "help.html", "text/html; charset=utf-8");
 		if (method === "GET" && url.pathname === "/help.css") return asset(response, "help.css", "text/css; charset=utf-8");
@@ -367,6 +370,7 @@ const server = createServer(async (request, response) => {
 		if (method === 'GET' && url.pathname === '/api/fleet') return json(response, 200, { runs: listRuns(dataDir).slice(0,100) });
 		if (method === 'GET' && url.pathname === '/api/fleet/run') return json(response, 200, { run: readRun(dataDir, url.searchParams.get('id')), events: runEvents(dataDir,url.searchParams.get('id')) });
 		if (method === 'GET' && url.pathname === '/api/fleet/receipt') return json(response, 200, controlReceipt(dataDir,url.searchParams.get('id'),url.searchParams.get('receipt')));
+		if (method === 'GET' && url.pathname === '/api/usage') return json(response, 200, await usageStore.query(Object.values(agents), Object.values(channelStore), url.searchParams));
 		if (method === "GET" && url.pathname === "/api/state") return json(response, 200, state(url.searchParams.get("agentId") || ""));
 		if (method === "GET" && url.pathname === "/api/agents") { const agentId = url.searchParams.get("agentId") || "", originAgent = agentId ? requireOperationalAgent(agentId) : null, visible = originAgent ? activeAgents().filter((agent) => agent.id !== originAgent.id && agentOperational(agent) && sharesChannel(originAgent, agent)) : activeAgents(); return json(response, 200, { agents: visible.map(publicAgent) }); }
 		if (method === "GET" && url.pathname === "/api/agent") return json(response, 200, { agent: publicAgent(requireOperationalAgent(clean(url.searchParams.get("agentId"), "agentId", 160))) });

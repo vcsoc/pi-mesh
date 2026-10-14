@@ -6,7 +6,7 @@
   const data=await response.json();if(!response.ok)throw new Error(data.error?.message||'Fleet request failed');return data;
  }
  async function refresh() {
-  if(!active||busy)return;busy=true;
+  if(!active||busy||document.hidden)return;busy=true;
   try {
    const {runs}=await api('/api/fleet'),project=get('fleet-project'),current=project.value;
    const projects=[...new Set(runs.map(r=>r.project))].sort();
@@ -25,5 +25,6 @@
  for(const button of document.querySelectorAll('[data-fleet-action]'))button.addEventListener('click',()=>void control(button.dataset.fleetAction));
  get('fleet-steer').addEventListener('click',()=>void control('steer'));
  window.addEventListener('mesh-fleet-view',event=>{const changed=active!==event.detail;active=event.detail;if(changed)void refresh()});
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refresh()});
  setInterval(()=>void refresh(),1500);
 })();

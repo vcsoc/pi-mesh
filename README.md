@@ -22,6 +22,14 @@ Then `/reload` again. `pi list` shows the installed Git checkout. No manual copy
 
 Developers clone this repository separately, make changes here and push to `main`; machines update their Pi-managed Git checkout with the command above. Do not edit installed checkouts or reintroduce a runtime copy in `mypi`.
 
+## New in 2.7.5 — responsive dashboard and daily usage
+
+Unchanged heartbeats no longer rebuild message history, controls or tabs. Message rows are reconciled by identity; live-event bursts are coalesced, hidden dashboard/fleet polling stops, and scroll/focus/selection are preserved. Existing project neighbourhoods, parent/worker lineage, reviews and native Pi queuing are retained.
+
+Open **Daily usage** for project/channel → agent → date → exact provider/model reports, INPUT/OUTPUT/CACHE_CR/CACHE_RD/estimated COST/MODELS and day/agent totals. Choose a single date or an **inclusive** start/end range; the browser's time zone is displayed. Missing history/metadata is disclosed rather than fabricated as zero. [Accounting, historical attribution limits and API reference](USAGE.md).
+
+Update with `pi update https://github.com/vcsoc/pi-mesh.git`. Activate the new broker only when workflows are quiescent; preserve private state and never replay history. Refresh the dashboard afterwards. Run `/reload` in existing Pi sessions after current work to load the updated extension/reviews.
+
 ## Compiled Pi and background runners
 
 Background runners use Node, not the compiled Pi executable. When Pi's bundled SDK has no physical `dist/index.js`, install the matching SDK in its private versioned cache:
@@ -40,7 +48,7 @@ Tool-driven work approvals open the half-height MESH EXECUTION REVIEW panel abov
 
 The collapsed tool transcript stays short; expand it for the full result. Runtime completion remains separate from acceptance evidence
 
-## Version 2.7.4
+## Version 2.7.5
 
 ## Token audit and AI gateway baseline
 
@@ -328,7 +336,7 @@ pi --no-extensions -e ./index.ts --list-models
 Optional browser regression checks (using an existing Playwright installation):
 
 ```sh
-PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs CHROMIUM_PATH=/usr/bin/chromium node test/workbench-browser.mjs
+PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs CHROMIUM_PATH=/usr/bin/chromium npm run test:browser
 ```
 
 This test uses intercepted fixture responses, not a live broker. It covers graph layout and wheel/gesture handling, typed node menus, local tab closing versus explicit channel closure, protected #user, panel folding, tutorial navigation/restoration, matrix/polling behavior, CSP and desktop/mobile layout. Safari gesture events are simulated; native WebKit/hardware trackpad acceptance is separate.

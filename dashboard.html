@@ -59,6 +59,21 @@
           <pre id="fleet-evidence"></pre>
         </section>
       </section>
+      <section id="usage-panel" class="usage-panel" role="tabpanel" aria-label="Daily agent usage" hidden>
+        <h2>Daily agent usage</h2>
+        <form id="usage-form" class="usage-filters">
+          <label>Period<select id="usage-mode"><option value="day">Single date</option><option value="range">Date range (inclusive)</option></select></label>
+          <label id="usage-single">Date<input id="usage-date" type="date" required></label>
+          <span id="usage-range" class="usage-range" hidden><label>Start date<input id="usage-start" type="date"></label><label>End date<input id="usage-end" type="date"></label></span>
+          <button id="usage-refresh" type="submit">Refresh usage</button>
+          <label>Project<select id="usage-project"><option value="">All projects</option></select></label>
+          <label>Channel<select id="usage-channel"><option value="">All channels</option></select></label>
+        </form>
+        <p id="usage-timezone" class="muted"></p>
+        <p class="muted">Recorded Mesh session usage only. Shared/copied session turns are counted once. Project owns usage; channel filters use known registrations/memberships, not historical token destinations. Refresh to include new completed responses.</p>
+        <output id="usage-status" role="status" aria-live="polite"></output>
+        <div id="usage-results"></div>
+      </section>
       <section id="agent-config-panel" class="agent-config-panel" role="tabpanel" aria-label="Configure selected agent" hidden>
         <h2 id="agent-config-title">Configure agent</h2><p id="agent-config-info" class="muted"></p>
         <label>Target agent<select id="agent-config-target" aria-label="Target agent"></select></label>
@@ -129,5 +144,6 @@
   </dialog>
   <script type="module" src="/dashboard.js"></script>
   <script src="/fleet-panel.js" defer></script>
+  <script src="/usage-panel.js" defer></script>
 </body>
 </html>
