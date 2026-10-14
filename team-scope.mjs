@@ -1,4 +1,5 @@
 import {compileWorkflow} from './workflow.mjs';
+import {compileDemoWorkflow} from './demo-work.mjs';
 
 const reads=new Set(['read','grep','find','ls']);
 export function requestScope(goal){
@@ -23,6 +24,7 @@ export function scopeProposal(factory,goal,scope=requestScope(goal)){
  return proposal;
 }
 export function compileScopedWorkflow(definition,profiles,options){
+ if(definition.scope==='demo')return compileDemoWorkflow(definition,options);
  if(definition.scope!==undefined&&!['review','build'].includes(definition.scope))throw new Error('Invalid team scope');
  let effective=profiles;
  if(definition.scope==='review'){

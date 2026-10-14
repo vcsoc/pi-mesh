@@ -1,6 +1,6 @@
 {
   "name": "pi-mesh",
-  "version": "2.7.6",
+  "version": "2.7.7",
   "private": true,
   "type": "module",
   "description": "Native Pi Mesh coordination, dashboard and explicitly approved local workflows",
@@ -33,7 +33,7 @@
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "test:browser": "node test/workbench-browser.mjs && node test/management-browser.mjs && node test/dashboard-performance-browser.mjs && node test/usage-browser.mjs && node test/topology-browser.mjs",
     "test:queue:tui": "python3 test/input-queue-tui-smoke.py",
-    "check": "node --check broker.mjs && node --check dashboard.js && node --check help.js && node --check runner.mjs && node --check fleet-panel.js && node --check usage-panel.js && node --check usage.mjs && node --check management-workbench.js && node --check topology-model.mjs && node --check topology-renderer.mjs && node --check topology-structured.mjs && npm test"
+    "check": "node --check broker.mjs && node --check dashboard.js && node --check help.js && node --check runner.mjs && node --check fleet-panel.js && node --check usage-panel.js && node --check usage.mjs && node --check management-workbench.js && node --check demo-work.mjs && node --check topology-model.mjs && node --check topology-renderer.mjs && node --check topology-structured.mjs && npm test"
   },
   "devDependencies": {
     "esbuild": "0.25.12",

@@ -12,6 +12,7 @@ import { readRun, listRuns, runDirectory, enqueueControl, controlReceipt, termin
 import { roleMemory } from './context-memory.mjs';
 import { quickWorkRequest } from './quick-work.mjs';
 import { teamWorkRequest } from './team-work.mjs';
+import { demoWorkRequest, demoReport, DEMO_USAGE, DEMO_SYSTEM_PROMPT } from './demo-work.mjs';
 import { reviewWork } from './work-tui.ts';
 import { simpleTeam, simpleProposal } from './simple-team.ts';
 import { compileScopedWorkflow } from './team-scope.mjs';
@@ -25,7 +26,7 @@ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, avail
  const editAgain=Symbol('edit-again');
  const status=createRunStatus({directory:getDirectory,projectOf:(ctx:any)=>canonicalProject(ctx.cwd),list:listRuns,read:readRun,onFinish:(run:any)=>{
   const spec=readJSON(join(runDirectory(getDirectory(),run.id),'spec.json'));
-  pi.sendMessage?.({customType:'mesh-result',content:completionReport(run,runVerification(run,spec)),display:true},{triggerTurn:false});
+  pi.sendMessage?.({customType:'mesh-result',content:spec.plan.scope==='demo'?demoReport(run,spec):completionReport(run,runVerification(run,spec)),display:true},{triggerTurn:false});
  }});
  pi.on('session_start',async(_event,ctx)=>status.start(ctx));
  pi.on('session_switch',async(_event,ctx)=>status.start(ctx));
@@ -92,7 +93,7 @@ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, avail
    }
   } else {
    const plan=compileScopedWorkflow(definition,profiles(ctx),{activeTools:pi.getActiveTools(),currentModel,availableModels,agentDir:getAgentDir()});
-   spec={plan,cwd:ctx.cwd,project,projectHash:projectHash(project),systemPrompt:ctx.getSystemPrompt(),thinkingLevel:ctx.thinkingLevel||pi.getThinkingLevel(),sdkFile:join(getPackageDir(),'dist','index.js'),agentDir:getAgentDir(),forkContext:plan.context==='fork'?forkContext(ctx.sessionManager.buildContextEntries()):'',missionId:params.missionId||definition.missionId};
+   spec={plan,cwd:ctx.cwd,project,projectHash:projectHash(project),systemPrompt:plan.scope==='demo'?DEMO_SYSTEM_PROMPT:ctx.getSystemPrompt(),thinkingLevel:ctx.thinkingLevel||pi.getThinkingLevel(),sdkFile:join(getPackageDir(),'dist','index.js'),agentDir:getAgentDir(),forkContext:plan.context==='fork'?forkContext(ctx.sessionManager.buildContextEntries()):'',missionId:params.missionId||definition.missionId};
   }
   if(spec.plan.stages.some(s=>s.tasks.some(t=>t.acceptance.some(g=>g.type==='command')))&&!pi.getActiveTools().includes('bash'))throw new Error('Host command gates require the parent bash capability');
   if(spec.missionId&&!listMissions(directory,project).some(m=>m.id===spec.missionId&&m.status==='open'))throw new Error('Choose an open mission in this project');
@@ -144,6 +145,13 @@ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, avail
  pi.on('session_shutdown',async()=>{status.stop();for(const id of foreground)try{enqueueControl(getDirectory(),id,'stop')}catch{}foreground.clear();});
  return async(args:string,ctx:any)=>{
   const raw=args.trim()||'list';
+  if(/^demo(?:\s|$)/i.test(raw)) {
+   if(raw.toLowerCase()==='demo help')return ctx.ui.notify(DEMO_USAGE,'info');
+   const request=demoWorkRequest(raw.slice(4).trim());
+   if(!ctx.hasUI)throw new Error('Mesh demo requires interactive approval. No work was started.');
+   const result=await operate(request,ctx);
+   return ctx.ui.notify(`Mesh demo ${result.id}: ${request.definition.demoCount} agents requested, up to ${request.definition.concurrency} concurrent; launched (${result.state}), not yet verified. Real model usage and Mesh logs. Footer tracks progress; a per-agent PASS/FAIL report follows. Stop with /mesh stop ${result.id}.`,'info');
+  }
   if(raw==='review-demo') {
    if(ctx.mode!=='tui')throw new Error('The review demo requires interactive Pi TUI mode. No work was started.');
    const demo={project:ctx.cwd,workingDirectory:ctx.cwd,scope:'review',isolation:'shared',background:false,context:'fresh',thinkingLevel:'demo only',gateway:{mode:'demo — NO EXECUTION'},limits:{spawns:0,tokens:0,concurrency:0,estimatedCost:0,childDeadlineMs:0},steps:Array.from({length:4},(_,index)=>({parallel:false,retries:0,tasks:[{id:`sample-${index+1}`,role:['scout','developer','tester','reviewer'][index],lane:'sample',model:'DEMO — no model request',write:false,tools:['read (sample only)'],extensions:[],extensionTools:[],task:`SAMPLE ONLY — stage ${index+1}. This review is for testing layout, scrolling and action selection. Cancel, Reject and Accept only close this sample. No worker, shell command, model request or run is created.\nScroll through this long example to verify that the actions remain fixed at the bottom.`,prompt:'Sample instructions only. Inspect the panel appearance; do not execute this task.',acceptance:[{type:'json',required:['verdict'],equals:{verdict:'demo only'}}]}]}))};
@@ -175,7 +183,7 @@ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, avail
     }
    }
   }
-  if(raw==='help')return ctx.ui.notify('Mesh jobs: team <request> (interactive editor) | review [task] | scout [task] | profiles | models | list | workflows | missions | JSON action. Review/scout show the exact scope for interactive approval before any worker starts. Example: /mesh jobs review Check this diff for correctness and tests. See ORCHESTRATION.md for advanced workflows.','info');
+  if(raw==='help')return ctx.ui.notify('Mesh jobs: demo <1–64 agents> (approved no-tools smoke test) | team <request> (interactive editor) | review [task] | scout [task] | profiles | models | list | workflows | missions | JSON action. Review/scout show the exact scope for interactive approval before any worker starts. Example: /mesh jobs review Check this diff for correctness and tests. See ORCHESTRATION.md for advanced workflows.','info');
   const input=runControlRequest(raw)??quickWorkRequest(raw)??(raw.startsWith('{')?JSON.parse(raw):{action:raw});
   const result=await operate(input,ctx);ctx.ui.notify(JSON.stringify(result,null,2).slice(-16000),'info');
  };

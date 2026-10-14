@@ -22,6 +22,14 @@ Then `/reload` again. `pi list` shows the installed Git checkout. No manual copy
 
 Developers clone this repository separately, make changes here and push to `main`; machines update their Pi-managed Git checkout with the command above. Do not edit installed checkouts or reintroduce a runtime copy in `mypi`.
 
+## New in 2.7.7 — approved multi-agent smoke test
+
+Use `/mesh demo 3` or `/mesh demo 22` to request **1–64 tiny in-memory agents**. Review the exact plan and explicitly Accept before anything launches; Cancel/Reject launches none. Four agents at most run concurrently, in bounded batches (22 means 22 total, not 22 simultaneous). They use your selected Pi provider/model and return strict JSON for arithmetic, string reversal or sorting. Demo scope ignores custom profile prompts/models/tools: workers have **no workspace tools or child extensions**, cannot delegate, and use minimal demo prompts (no parent conversation/project role memory) and fresh/shared sessions without retries, schedules or automatic continuation.
+
+The footer tracks the background run; a deterministic per-agent result report follows in the parent transcript. PASS requires all requested agents to finish with the expected values and passing JSON gates, not merely terminal runtime. Inspect with `/mesh jobs {"action":"inspect","id":"<run-id>"}`; stop with `/mesh stop <run-id>`. Real model usage, SDK sessions, normal Mesh logs and vault handoffs are recorded. Estimated-cost ceiling is `max($1, $0.25 × count)` ($5.50 for22), audit-only tokens, 60-second deadline per child; missing provider cost data is not a hard billing guarantee. There is no OS sandbox. Shared execution refuses overlap with other Mesh work in the project. This is different from `/mesh jobs review-demo`, which only displays sample UI and makes no model requests.
+
+Activation is separate: publishing this release does not update installed packages, restart a broker or launch a demo. Update the Pi-managed Git package explicitly and activate only with an authorized, quiescent broker restart, preserving private state; reload open Pi sessions after current work.
+
 ## New in 2.7.6 — Sigma.js topology
 
 The topology now uses **[Sigma.js 4.0.2](https://github.com/jacomyal/sigma.js)** (WebGL2) and **Graphology 0.26.0**, not custom SVG drawing. Project hubs contain channel hubs; unique agent points are spaced on deterministic satellite rings around their joined active channel, or their project if no local channel applies. Extra memberships and registered parent/child links add edges, not duplicate agent points. Identically named projects remain separate by project hash/path. Structured overview also includes every project; scoped orbital view retains its channel and all recorded members.
@@ -58,7 +66,7 @@ Tool-driven work approvals open the half-height MESH EXECUTION REVIEW panel abov
 
 The collapsed tool transcript stays short; expand it for the full result. Runtime completion remains separate from acceptance evidence
 
-## Version 2.7.6
+## Version 2.7.7
 
 ## Token audit and AI gateway baseline
 
@@ -222,6 +230,7 @@ Other commands:
 /mesh version                      # loaded extension semantic version (e.g. Agent Mesh v2.7.4)
 /mesh doctor                       # read-only config/broker/session/fleet checks
 /mesh configure <agent>           # choose that online Pi session's model and thinking level
+/mesh demo 22                      # approve 22 no-tools smoke-test agents, up to4 concurrently
 /mesh jobs review Check this diff. # approve a single reviewer before any launch
 /mesh jobs scout Find entry points. # approve a single scout before any launch
 /mesh agents

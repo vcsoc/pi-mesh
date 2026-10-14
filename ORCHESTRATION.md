@@ -41,6 +41,18 @@ Preview without launching:
 
 Pass that JSON after `/mesh jobs`. Replace `preview` with `run` to request execution. Every run and resume requires an interactive confirmation listing the project, exact models, tools, tasks, command gates, schedule and limits. `background:true` returns a run ID immediately; the detached runner survives Pi exit. Foreground runs wait and are stopped on parent shutdown. `agent_mesh_work` exposes the same operations to the model. Complexity alone does not authorize delegation.
 
+## Multi-agent smoke test
+
+```text
+/mesh demo 3
+/mesh demo 22
+/mesh demo help
+```
+
+Request1–64 total agents; at most four run concurrently, in batches. Interactive approval shows exact tasks/models/permissions/limits; cancel/reject starts none. The selected parent model is frozen at approval. Demo scope is immutable and ignores profile overrides: no built-in workspace tools, child extensions, command gates, model fallback or delegation. Workers only calculate a sum, reverse a string or sort a tiny list into a comma-separated result, then return strict JSON. One spawn per task, no retries/schedules/automatic continuation, minimal fresh prompts without parent conversation/project role memory, shared directory, 60 seconds per child and `max($1, count × $0.25)` estimated-cost ceiling; token usage is audited without a token ceiling.
+
+The background run is visible in Work fleet/topology while children are registered. The parent receives a deterministic report with every task, agent identity, result, runtime and expected-value check. PASS requires all requested tasks and gates to pass; partial/failed/cancelled runs are not accepted. Use `/mesh stop <full-run-id>` or inspect retained evidence with `/mesh jobs {"action":"inspect","id":"<run-id>"}`. Normal provider inference costs, SDK sessions, Mesh metadata and vault handoffs still occur; no project work is requested, but this is not a zero-cost/no-filesystem dry run or an OS sandbox. Shared workspace exclusion remains unchanged. Reopening Pi never replays old demos; if the parent closes before the report, inspect the retained run. `/mesh jobs review-demo` remains the separate no-execution UI sample.
+
 ## Project channels
 
 Project sessions share a readable channel such as `#mypi`, based on canonical Git root (otherwise folder). Different roots with the same folder name get a discriminator to preserve isolation. Existing generated `project-<name>-<hash>` references remain aliases to the readable channel, including scoped historical queries; transcript records themselves are unchanged. Explicit closure revokes membership and keeps history; aliases cannot reopen a closed channel. A later new registration may create a fresh numbered channel, rather than resurrecting the closed scope. Custom channels and deliberate selections are preserved.

@@ -9,7 +9,7 @@ import { runEvents } from './fleet.mjs';
 import { canonicalRole, roleName, allocateName } from './naming.mjs';
 import { UsageStore } from './usage.mjs';
 
-const VERSION = "2.7.6";
+const VERSION = "2.7.7";
 const MAX_BODY = 64 * 1024;
 const MAX_MESSAGE = 20_000;
 const MAX_CHANNEL = 64;

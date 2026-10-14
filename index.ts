@@ -15,7 +15,7 @@ import { truncateHead, type ExtensionAPI, type ExtensionContext } from "@earendi
 import { Container } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
-const VERSION = "2.7.6";
+const VERSION = "2.7.7";
 const DEFAULT_PORT = 47831;
 const MESH_TOOLS = ["agent_mesh_send", "agent_mesh_agents", "agent_mesh_history", "agent_mesh_channels"];
 const extensionDir = dirname(fileURLToPath(import.meta.url));
@@ -241,7 +241,7 @@ export default function agentMesh(pi: ExtensionAPI) {
 	const openMeshPage = async (action: "dashboard" | "help", current: ExtensionContext) => { try { await broker(); } catch (cause) { let live = await probe(1000); for (let attempt = 0; attempt < 4 && !live?.ok; attempt++) { await new Promise((done) => setTimeout(done, 250)); live = await probe(1000); } if (!live?.ok || live.instance !== fingerprint()) throw cause; } const authPath = action === "help" ? "/auth/help" : "/auth"; open(`${base()}${authPath}?token=${encodeURIComponent(config!.token)}`); current.ui.notify(action === "help" ? "Opened Agent Mesh documentation" : `Opened ${base()}`, "info"); };
 
 	const workCommand = registerWork(pi, () => config!.dataDir, async () => { assertAvailable(); await syncAgent(); }, () => ({base:base(),token:config!.token}));
-	pi.registerCommand("mesh", { description: "Configure a team in Pi: change settings, cancel, or accept", getArgumentCompletions: (prefix) => { const value = prefix.trimStart().toLowerCase(); const items = [{ value: "role", label: "role · set role and project-based name" }, { value: "jobs", label: "jobs · role profiles, delegation and job control" }, { value: "team", label: "team · completion-driven team for your request" }, { value: "doctor", label: "doctor · read-only setup and failure checks" }, { value: "configure", label: "configure · choose a participant model and thinking level" }, { value: "dashboard", label: "dashboard" }, { value: "help", label: "help" }, { value: "version", label: "version" }, { value: "name", label: "name" }, { value: "agents", label: "agents" }, { value: "channels", label: "channels" }, { value: "join", label: "join" }, { value: "switch", label: "switch" }, { value: "leave", label: "leave" }, { value: "on", label: "on" }, { value: "off", label: "off" }, { value: "rejoin", label: "rejoin" }, { value: "@", label: "@<agent>" }, { value: "#", label: "#<channel>" }].filter((item) => value ? item.value.startsWith(value) : ['team','jobs','dashboard','help'].includes(item.value)); return items.length ? items : null; }, handler: async (args, current) => {
+	pi.registerCommand("mesh", { description: "Configure a team in Pi: change settings, cancel, or accept", getArgumentCompletions: (prefix) => { const value = prefix.trimStart().toLowerCase(); const items = [{ value: "role", label: "role · set role and project-based name" }, { value: "jobs", label: "jobs · role profiles, delegation and job control" }, { value: "team", label: "team · completion-driven team for your request" }, { value: "demo", label: "demo · approved no-tools test, e.g. demo 22" }, { value: "doctor", label: "doctor · read-only setup and failure checks" }, { value: "configure", label: "configure · choose a participant model and thinking level" }, { value: "dashboard", label: "dashboard" }, { value: "help", label: "help" }, { value: "version", label: "version" }, { value: "name", label: "name" }, { value: "agents", label: "agents" }, { value: "channels", label: "channels" }, { value: "join", label: "join" }, { value: "switch", label: "switch" }, { value: "leave", label: "leave" }, { value: "on", label: "on" }, { value: "off", label: "off" }, { value: "rejoin", label: "rejoin" }, { value: "@", label: "@<agent>" }, { value: "#", label: "#<channel>" }].filter((item) => value ? item.value.startsWith(value) : ['team','demo','jobs','dashboard','help'].includes(item.value)); return items.length ? items : null; }, handler: async (args, current) => {
 		try {
 		const raw = args.trim(), lowered = raw.toLowerCase(), [command, ...rest] = raw.split(/\s+/);
 		if (!raw) return await workCommand('team', current);
@@ -252,6 +252,7 @@ export default function agentMesh(pi: ExtensionAPI) {
 			const result=await diagnoseMesh({configPath,version:VERSION,project:canonicalProject(current.cwd),model:model(current),agent});
 			return current.ui.notify(result.checks.map(check=>`${check.status} ${check.name}: ${check.detail}`).join('\n'),result.ok?'info':'warning');
 		}
+		if (command?.toLowerCase() === 'demo') return await workCommand(raw,current);
 		if (command?.toLowerCase() === 'jobs') return await workCommand(raw.slice(4).trim(), current);
         if (['steer','pause','continue','stop'].includes(command?.toLowerCase())) return await workCommand(raw,current);
 		if (command?.toLowerCase() === 'team') {
@@ -293,7 +294,7 @@ export default function agentMesh(pi: ExtensionAPI) {
 		if (lowered === "leave") return await pickChannel("leave", current);
 		if (raw.startsWith("@")) return await sendAddressedIntervention(raw, current);
 		if (raw.startsWith("#")) return await sendChannelIntervention(raw, current);
-		return current.ui.notify("Usage: /mesh [dashboard|help|doctor|configure|version|name|role|team|jobs|agents|channels|join|switch|leave|on|off|@agent|#channel]", "warning");
+		return current.ui.notify("Usage: /mesh [dashboard|help|doctor|configure|version|name|role|team|demo|jobs|agents|channels|join|switch|leave|on|off|@agent|#channel]", "warning");
 		} catch (cause) { current.ui.notify(friendlyError(cause), "warning"); }
 	} });
 
