@@ -124,7 +124,7 @@ test('fleet routes are authenticated, read-only on GET and reject traversal/cont
  assert.equal((await fetch(f.base+'/fleet-panel.js',{headers:f.headers})).status,200);
 });
 test("v2 channels, recipient snapshots, security, UI assets, and persistence",async t=>{
- const f=await fixture(t);assert.equal(f.health.version,"2.8.0");assert.equal(f.health.host,"127.0.0.1");assert.ok(f.health.instance);
+ const f=await fixture(t);assert.equal(f.health.version,"2.8.1");assert.equal(f.health.host,"127.0.0.1");assert.ok(f.health.instance);
  for(const agent of [{agentId:"cubed",requestedName:"Cubed",cwd:"C:/cubed",status:"idle"},{agentId:"haven",requestedName:"Haven",cwd:"C:/haven",status:"working"}])assert.equal((await f.post("/api/register",agent)).response.status,200);
  assert.equal((await f.post("/api/register",{agentId:"x",requestedName:"Haven",cwd:"C:/x"})).response.status,409);
  let state=await fetch(`${f.base}/api/state`,{headers:f.headers}).then(response=>response.json());assert.equal(state.channels.find(channel=>channel.name==="user").memberCount,2);assert.equal(state.agents.find(agent=>agent.id==="cubed").activeChannel,'cubed');

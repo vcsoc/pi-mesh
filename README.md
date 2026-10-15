@@ -22,9 +22,13 @@ Then finish work and restart Pi normally (`pi --continue` or `pi --resume` in th
 
 Developers clone this repository separately, make changes here and push to `main`; machines update their Pi-managed Git checkout with the command above. Do not edit installed checkouts or reintroduce a runtime copy in `mypi`.
 
+## New in 2.8.1 — expandable aggregate topology
+
+Radial project/channel/agent-family groups now have plus/minus indicators and curved links. Double-click a parent to expand/collapse its branch in place; collision-aware animation makes room and keeps that group in view. Every node has a type-specific context menu, including project Kanban/project-only focus. Folds persist locally, search reveals matching ancestry, and keyboard/reduced-motion/fallback controls remain available. See [Expandable topology](TOPOLOGY.md).
+
 ## New in 2.8.0 — project workbench and dependency scheduling
 
-New approvals no longer use four-agent batches: all ready tasks run within the approved spawn/concurrency budget, with dependency queuing, exclusive task/lane ownership and recoverable blockers. `/mesh config` edits project settings inline with Cancel/Save. The dashboard has one circular map with double-click project focus and a project Kanban board with live task comments. Demos have a15-second child deadline; stalled providers become decision blockers, never false PASS. See [Project work and decisions](PROJECT-WORK.md) for limits, escalation, approval boundaries and activation.
+New approvals no longer use four-agent batches: all ready tasks run within the approved spawn/concurrency budget, with dependency queuing, exclusive task/lane ownership and recoverable blockers. `/mesh config` edits project settings inline with Cancel/Save. The dashboard has one project map and a project Kanban board with live task comments (2.8.1 adds parent folding; project-only focus is in the context menu). Demos have a15-second child deadline; stalled providers become decision blockers, never false PASS. See [Project work and decisions](PROJECT-WORK.md) for limits, escalation, approval boundaries and activation.
 
 ## Approved multi-agent smoke test
 
@@ -36,9 +40,9 @@ Activation is separate: publishing this release does not update installed packag
 
 ## New in 2.7.6 — Sigma.js topology
 
-The topology now uses **[Sigma.js 4.0.2](https://github.com/jacomyal/sigma.js)** (WebGL2) and **Graphology 0.26.0**, not custom SVG drawing. Project hubs contain channel hubs; unique agent points are spaced on deterministic satellite rings around their joined active channel, or their project if no local channel applies. Extra memberships and registered parent/child links add edges, not duplicate agent points. Identically named projects remain separate by project hash/path. The current workbench uses one circular project map; structured/orbital selectors are retired.
+The topology now uses **[Sigma.js 4.0.2](https://github.com/jacomyal/sigma.js)** (WebGL2) and **Graphology 0.26.0**, not custom SVG drawing. Project hubs contain channel hubs; unique agent points are spaced on deterministic satellite rings around their joined active channel, or their project if no local channel applies. Extra memberships and registered parent/child links add edges, not duplicate agent points. Identically named projects remain separate by project hash/path. The current workbench uses one expandable radial aggregation map; structured/orbital selectors are retired.
 
-Double-click a project hub to show just its agents and Kanban. Click an agent/channel to read its conversation; right-click for existing actions. Pan, mouse/trackpad/Safari zoom, Fit, search, live status/lineage, theme, workspace shortcuts are retained. Sigma draws the actual nodes, readable labels and solid/dashed relationships; safe HTML controls provide keyboard accessibility. Unavailable WebGL2 produces an explicit accessible-list fallback, never a fake Sigma graph. One renderer/context is updated incrementally; heartbeat-only refreshes do not reconstruct the graph or history.
+Double-click a parent to expand/collapse its descendants in place, with collision-aware motion and group framing. Use a project's context menu to open Kanban or show just its agents. Click an agent/channel to read its conversation; right-click for type-specific branch and existing actions. Pan, mouse/trackpad/Safari zoom, Fit, search, live status/lineage, theme, workspace shortcuts are retained. Sigma draws the actual nodes, readable labels and solid/dashed relationships; safe HTML controls provide keyboard accessibility. Unavailable WebGL2 produces an explicit accessible-list fallback, never a fake Sigma graph. One renderer/context is updated incrementally; heartbeat-only refreshes do not reconstruct the graph or history.
 
 Assets are self-hosted and authenticated under the existing CSP: no CDN, external graph service or runtime package build. The pinned browser bundle and license notices live in `vendor/`. Maintainers regenerate it with `npm ci --legacy-peer-deps --ignore-scripts && npm run build:topology`; host-provided Pi packages remain peers, never bundled. Layout/model/renderer sources are `topology-layout.mjs`, `topology-structured.mjs`, `topology-model.mjs` and `topology-renderer.mjs`.
 
@@ -153,7 +157,7 @@ Deployment preserves the existing Mesh home, broker credentials and run/message 
 ## New in 2.7.2
 
 - Configure a selected **existing Pi session's actual model and thinking level** with `/mesh configure <agent>` or the workspace Configure agent tab, opened from either agent context menu. The target session validates availability, exact model and supported thinking level, waits until idle, applies through Pi's own session API and acknowledges the result. A queued request is not proof of application. Active approved child jobs cannot be reconfigured; choose their model and thinking before launching.
-- One circular Sigma/WebGL2 map with project/channel hubs and agent rings. Double-click a project to show just its agents and project Kanban; **← All projects** restores the full map. Drag to pan, wheel/pinch to zoom, use Fit/search and accessible node controls. No structured/orbital selector or animation.
+- One expandable radial Sigma/WebGL2 map with project/channel hubs and real agent families. Double-click a parent to fold/unfold; groups make room without node overlaps and the selected branch stays in view. Type-specific right-click menus include Kanban and project-only focus; **← All projects** exits that drilldown. Expand/Collapse all, Fit, pan/zoom, search and keyboard controls remain. Reduced motion disables tweens; no structured/orbital selector.
 - Close × is visually inside its own conversation tab. Collapse or expand the entire right inspector. Alt+T shows topology only, Alt+M messages only and Alt+R restores all three panels; visible toolbar buttons offer an alternative if a browser reserves a shortcut. The guided walkthrough now covers the new views and controls.
 
 ## New in 2.7.1
@@ -291,7 +295,7 @@ Restrictive agents receive Mesh coordination tools additively when addressed.
 The authenticated browser UI uses a full-viewport Workbench layout, dark by default, with a darker VS Code-inspired background. It provides:
 
 - a resizable, collapsible left Membership topology pane, a central tabbed workspace, and a right inspector with Explorer and Intervene & manage tabs;
-- circular project/channel hubs and unique agent nodes, connected by current memberships and recorded parent links; status is labeled and colored. Project double-click filters to that project's agents/Kanban; **← All projects** restores every project. Channel context focus selects its project without changing memberships;
+- radial project/channel hubs and unique agent-family nodes, connected by current memberships and recorded parent links; status is labeled and colored. Parent double-click folds/unfolds descendants without filtering other projects. Project context menus offer Kanban/project-only focus; **← All projects** exits that drilldown. No visibility control changes membership;
 - node-driven transcript filtering: agent selection shows messages sent by or addressed to that agent, including immutable recipient snapshots; channel selection shows that channel's messages. Selecting the same topology node again clears the filter and returns to All messages;
 - channel tabs opened or activated from either the topology, Explorer, or matrix; an existing channel tab is reused rather than duplicated;
 - a pinned first Membership matrix tab showing current membership, with ★ marking each agent's active channel, plus clickable channel headings and agent names. Topology and Explorer also display the active channel. Dashboard filtering does **not** switch an agent's active channel;

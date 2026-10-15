@@ -52,7 +52,7 @@ try {
  assert.ok(await cameraRatio()<originalGraph,'Safari gesture handler zooms');await page.locator('#topology-fit').click();
  assert.ok(await page.locator('.topology-node').evaluateAll(nodes=>new Set(nodes.map(n=>n.style.left)).size)>2,'graph is spatial, not two columns');
  assert.equal(await page.locator('#topology-layout').count(),0,'only the circular project map remains');
- await page.locator('.project-node').dblclick();await page.waitForSelector('#kanban-panel:not([hidden])');assert.equal(await page.locator('.topology-node[data-kind="agent"]').count(),3);await page.locator('#topology-overview').click();await page.locator('[data-view="all"]').click();
+ await page.locator('.project-node').dblclick();await page.waitForSelector('#kanban-panel:not([hidden])');assert.equal(await page.locator('.topology-node[data-kind="agent"]').count(),0);await page.locator('#topology-expand-all').click();await page.locator('[data-view="all"]').click();
  await page.locator('[data-node="agent:a0"]').click({button:'right'});assert.ok(await page.getByRole('menuitem',{name:'Send user intervention…'}).isVisible());
  await page.getByRole('menuitem',{name:'Configure Cubed…'}).click();await page.waitForSelector('#agent-config-panel:not([hidden])');assert.equal(await page.locator('#agent-config-model').inputValue(),'sample-provider/first');
  assert.equal(await page.locator('[data-view="config"]').count(),1);await page.screenshot({path:'/tmp/mesh-config-form.png'});await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'agent form does not overflow mobile view');await page.setViewportSize({width:1440,height:900});await page.getByRole('button',{name:'Close agent configuration tab'}).click();assert.equal(await page.locator('[data-view="config"]').count(),0);
@@ -69,12 +69,12 @@ try {
  assert.match(await page.locator('#fleet-evidence').textContent(),/fixture event/);assert.equal(await page.locator('#fleet-evidence script').count(),0);
  await page.locator('[data-view="all"]').click();
  for(const [status,color] of [['working','#69bb7f'],['idle','#eda55e'],['offline','#8d8d95']])assert.equal(await page.locator('.topology-node.'+status).evaluate(n=>document.querySelector('.sigma-topology').topology.sigma.getNodeDisplayData(n.dataset.node).color),color);
- await page.locator('[data-node="channel:backend"]').click();assert.equal(await page.locator('.message').count(),4);
+ await page.locator('[data-node="channel:backend"]').click();await page.waitForFunction(()=>document.querySelectorAll('.message').length===4);assert.equal(await page.locator('.message').count(),4);
  assert.equal(await page.locator('.thread-row').filter({hasText:'#backend'}).locator('.thread-count').textContent(),'4');
  assert.equal(await page.locator('.message').filter({hasText:'Legacy unknown channel'}).count(),0);
  assert.equal(await page.locator('.message').filter({hasText:'Historical general coordination'}).count(),0);
  assert.equal(await page.locator('[data-view="channel:backend"]').count(),1);
- await page.locator('[data-node="channel:backend"]').click();assert.equal(await page.locator('.message').count(),8);
+ await page.locator('[data-node="channel:backend"]').click();await page.waitForFunction(()=>document.querySelectorAll('.message').length===8);assert.equal(await page.locator('.message').count(),8);
  await page.locator('[data-node="agent:a0"]').click();assert.equal(await page.locator('.message').count(),7);
  assert.ok(await page.locator('.message').filter({hasText:'Direct intervention'}).count());
  await page.locator('[data-node="agent:a0"]').click();assert.equal(await page.locator('.message').count(),8);
@@ -126,7 +126,7 @@ try {
  for(let i=3;i<25;i++)state.agents.push({...state.agents[0],id:`a${i}`,name:`Agent ${i}`,status:'idle'});
  state.agents[0].status='working';state.agents[0].activity='thinking';
  await page.waitForTimeout(1700);
- await page.locator('.project-node').dblclick();assert.equal(await page.locator('.topology-node[data-kind="agent"]').count(),25);assert.equal(await page.locator('[data-node="channel:backend"]').count(),0);await page.locator('#topology-overview').click();
+ await page.locator('.project-node').click({button:'right'});await page.getByRole('menuitem',{name:'Focus project sample only',exact:true}).click();assert.equal(await page.locator('.topology-node[data-kind="agent"]').count(),25);assert.equal(await page.locator('[data-node="channel:backend"]').count(),0);await page.locator('#topology-overview').click();
  const labelsDoNotOverlap=()=>page.locator('.topology-node b').evaluateAll(labels=>labels.every((node,i)=>labels.every((other,j)=>{if(i>=j)return true;const a=node.getBoundingClientRect(),b=other.getBoundingClientRect();return a.right<=b.left+.5||b.right<=a.left+.5||a.bottom<=b.top+.5||b.bottom<=a.top+.5})));
  assert.equal(await labelsDoNotOverlap(),true,'circular project labels must not overlap');assert.equal(await page.locator('.topology-node').count(),state.agents.length+state.channels.length+await page.locator('.project-node').count());
  const stationary=await page.locator('[data-node="agent:a0"]').evaluate(n=>n.style.left);await page.waitForTimeout(360);assert.equal(await page.locator('[data-node="agent:a0"]').evaluate(n=>n.style.left),stationary,'no orbital animation');

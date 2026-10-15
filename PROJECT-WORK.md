@@ -1,4 +1,4 @@
-# Project work and decisions — Mesh2.8.0
+# Project work and decisions — Mesh2.8.1
 
 ## Throughput and dependencies
 
@@ -32,7 +32,7 @@ New approvals use these defaults; explicitly specified workflow values win. Demo
 
 ## Kanban
 
-The default right-hand work view is a **project-scoped Kanban**: Backlog → To Do → In Progress → Testing → Done. The left map is one circular arrangement of projects/channels/agents, without structured/orbital selectors or animation. Double-click a project (or choose it in the board) to show only its agents and board; All projects restores the full map. Messages, Usage, Fleet, inspector controls, Sigma/WebGL2 and accessible fallback remain available.
+The default right-hand work view is a **project-scoped Kanban**: Backlog → To Do → In Progress → Testing → Done. The left map is one expandable radial aggregation of projects/channels/agent families, without structured/orbital selectors. Double-click a parent to fold/unfold descendants, with collision-aware motion and group framing. Project context menus offer Kanban and project-only focus; choosing a project in the board also drills down, and All projects restores the full map. See [Expandable topology](TOPOLOGY.md) for hierarchy, local folds, curved membership summaries, type-specific/keyboard menus and reduced motion. Messages, Usage, Fleet, inspector controls, Sigma/WebGL2 and accessible fallback remain available.
 
 Orchestrators use `agent_mesh_tasks` to create/refine tasks, inspect comments, answer questions or escalate. Board creation/refinement alone **does not authorize inference or writes**. For executable work, preview/approve a workflow as usual. Approved task definitions are seeded into To Do and their runner claims/moves cards **on behalf of each child**, using an exclusive owner/lease. Done requires passing acceptance evidence and successful child cleanup/context settlement. Ungated runtime completion stays in Testing, not Done. This is an execution/task lifecycle, not an invented sprint calendar or a substitute for independent review.
 
