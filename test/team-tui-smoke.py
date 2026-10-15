@@ -50,7 +50,7 @@ def choose(query, expected):
     assert expected in text(), f'Expected {expected}; refusing further input. Received: {text()[-3000:]}'
 try:
     pump(3)
-    choose('/mesh', 'What should Mesh do?')
+    choose('/mesh team', 'What should Mesh do?')
     os.write(master, b'\x1b')
     pump(0.5)
     choose('/mesh team Verify the fixture only', 'Mesh · new team')
@@ -130,6 +130,8 @@ finally:
     try: os.kill(pid, signal.SIGTERM)
     except ProcessLookupError: pass
     time.sleep(0.3)
+    # Darwin child teardown can wait for the terminal master to close.
+    os.close(master)
     try:
         waited, _ = os.waitpid(pid, os.WNOHANG)
         if waited == 0:
@@ -142,6 +144,5 @@ finally:
         if health.get('instance') == hashlib.sha256(cfg['token'].encode()).hexdigest()[:16]:
             os.kill(int(health['pid']), signal.SIGTERM)
     except (OSError, ValueError, KeyError): pass
-    os.close(master)
     time.sleep(0.2)
     shutil.rmtree(home)

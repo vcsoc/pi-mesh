@@ -22,6 +22,14 @@ Then finish work and restart Pi normally (`pi --continue` or `pi --resume` in th
 
 Developers clone this repository separately, make changes here and push to `main`; machines update their Pi-managed Git checkout with the command above. Do not edit installed checkouts or reintroduce a runtime copy in `mypi`.
 
+## New in 2.8.2 — page navigation and reference-style aggregation
+
+Bare **`/mesh` opens the dashboard**; `/mesh dashboard` remains a compatible alias. Use `/mesh team` explicitly for the native team composer. No browser-opening command approves or launches workers.
+
+A collapsible left navigation replaces the old workspace/Inspector tabs. Kanban, memberships, messages, fleet, usage, Explorer, interventions and any opened channel/configuration each have one central page and a browser-history URL. Drafts, comments, selection and recorded usage remain in their existing components. The right panel is now the topology: **closed on each visit**, resizable when opened, and expandable across the centre/right while the navigation stays available. Selecting a page leaves full-map mode. Narrow screens show the map or the content page rather than squeezing both into unusable columns.
+
+The overview packs project-centred radial clusters into the available aspect ratio instead of putting every project on a huge empty ring. Population-weighted pale aggregate hubs, readable ± controls, role-coloured agent circles with separate status dots, curved links and gold selected branches follow the aggregation reference. A dedicated21-project/33-agent narrow-pane regression checks visible node sizes, centre occupancy, collision-free bodies, light/dark screenshots and the page shell. See [Topology](TOPOLOGY.md).
+
 ## New in 2.8.1 — expandable aggregate topology
 
 Radial project/channel/agent-family groups now have plus/minus indicators and curved links. Double-click a parent to expand/collapse its branch in place; collision-aware animation makes room and keeps that group in view. Every node has a type-specific context menu, including project Kanban/project-only focus. Folds persist locally, search reveals matching ancestry, and keyboard/reduced-motion/fallback controls remain available. See [Expandable topology](TOPOLOGY.md).
@@ -104,7 +112,7 @@ Validation includes deterministic 500-agent layout tests, parent/project registr
 
 ## Simple Mesh — history-style Pi TUI
 
-Run `/mesh` and enter your task, or `/mesh team <request>` directly. The main view is one compact rounded panel, like prompt-history:
+Run `/mesh team` and enter your task, or `/mesh team <request>` directly. Bare `/mesh` opens the dashboard. The main view is one compact rounded panel, like prompt-history:
 
 ```text
 Task        Your request
@@ -133,7 +141,7 @@ Most users only need Task, Model, Spending and Files. Team chooses Review only, 
 
 The native Pi footer shows the latest same-project run's ID, state, worker/activity, reported tokens and estimated cost, including background work and restored history. It uses a separate `setStatus` entry, not a replacement footer. Paused/failed/interrupted states stay explicit; FINISHED means runtime completion, not acceptance. Polling never resumes or launches work.
 
-`/mesh dashboard` still opens the web dashboard; `/mesh jobs list` inspects runs. Bare `/mesh` no longer opens a browser. Empty command completion shows only the main commands; all existing expert subcommands remain available when typed. TUI-only entry points refuse RPC/print mode without launching anything.
+`/mesh` opens the web dashboard (`/mesh dashboard` remains an alias); `/mesh jobs list` inspects runs. Use `/mesh team` for the composer. Empty command completion shows only the main commands; all existing expert subcommands remain available when typed. TUI-only entry points refuse RPC/print mode without launching anything.
 
 Validation: `npm run check`, `uv run --no-project --with pyte==0.8.2 python test/team-tui-smoke.py`. Native smoke uses isolated state/synthetic models and cancels. Actual launch approval is exercised only against a verified mocked launch boundary; no live worker/model was started. See `patches/SIMPLE-UI.md` for the separately qualified installed-runtime patch.
 
@@ -216,7 +224,7 @@ MESH_QUEUE_OLD_ROOT=/private/backup/installed python3 test/input-queue-tui-smoke
 
 ## Activation
 
-Use the Git package installation above; `pi list` identifies its checkout. Run `/reload` in every open Pi session after current work finishes, then `/mesh` and refresh the dashboard. New sessions receive project-role names and project channels automatically. Optional overrides:
+Use the Git package installation above; `pi list` identifies its checkout. After current work finishes, exit older Pi sessions normally and restart/resume in the same project (`pi --continue` or `pi --resume`) before `/mesh`; `/reload` alone may retain native `.mjs` helpers. Refresh the browser dashboard for UI changes. New sessions receive project-role names and project channels automatically. Optional overrides:
 
 ```text
 /mesh name Cubed

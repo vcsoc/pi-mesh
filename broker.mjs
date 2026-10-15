@@ -10,7 +10,7 @@ import { TaskBoard, TASK_COLUMNS } from './task-board.mjs';
 import { canonicalRole, roleName, allocateName } from './naming.mjs';
 import { UsageStore } from './usage.mjs';
 
-const VERSION = "2.8.1";
+const VERSION = "2.8.2";
 const MAX_BODY = 64 * 1024;
 const MAX_MESSAGE = 20_000;
 const MAX_CHANNEL = 64;

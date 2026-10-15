@@ -37,12 +37,12 @@ try {
   if(files[pathname])return route.fulfill({body:await readFile(new URL('../'+files[pathname],import.meta.url)),contentType:pathname.endsWith('.css')?'text/css':(pathname.endsWith('.js')||pathname.endsWith('.mjs'))?'text/javascript':'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"}});
   return route.fulfill({status:404,body:''});
  });
- await page.goto('http://mesh.test');await page.waitForSelector('.topology-node');await page.locator('[data-view="all"]').click();if(await page.locator('#inspector-toggle').getAttribute('aria-expanded')==='false')await page.locator('#inspector-toggle').click();
+ await page.goto('http://mesh.test');await page.locator('#topology-toggle').click();await page.waitForSelector('.topology-node');await page.locator('[data-view="all"]').click();
  assert.equal(await page.locator('.message').count(),8);
  assert.equal(await page.locator('#mesh-controls .section-toggle').getAttribute('aria-expanded'),'false');
  assert.equal(await page.locator('#membership .section-toggle').getAttribute('aria-expanded'),'false');
  assert.equal(await page.locator('#membership .section-toggle').textContent(),'Agent access');
- for(const id of ['channel-panel','participant-panel']){await page.locator(`#${id} .section-toggle`).click();assert.equal(await page.locator(`#${id}`).evaluate(n=>n.classList.contains('section-collapsed')),true);await page.locator(`#${id} .section-toggle`).click()}
+ await page.locator('[data-view="explorer"]').click();for(const id of ['channel-panel','participant-panel']){await page.locator(`#${id} .section-toggle`).click();assert.equal(await page.locator(`#${id}`).evaluate(n=>n.classList.contains('section-collapsed')),true);await page.locator(`#${id} .section-toggle`).click()}
  assert.equal(await page.locator('.sigma-topology').getAttribute('data-renderer'),'sigma','real WebGL renderer required');
  const cameraRatio=()=>page.locator('.sigma-topology').evaluate(n=>n.topology.sigma.getCamera().getState().ratio),originalGraph=await cameraRatio();
  await page.locator('#topology-canvas').hover();await page.mouse.wheel(0,-80);await page.waitForTimeout(100);
@@ -56,19 +56,19 @@ try {
  await page.locator('[data-node="agent:a0"]').click({button:'right'});assert.ok(await page.getByRole('menuitem',{name:'Send user intervention…'}).isVisible());
  await page.getByRole('menuitem',{name:'Configure Cubed…'}).click();await page.waitForSelector('#agent-config-panel:not([hidden])');assert.equal(await page.locator('#agent-config-model').inputValue(),'sample-provider/first');
  assert.equal(await page.locator('[data-view="config"]').count(),1);await page.screenshot({path:'/tmp/mesh-config-form.png'});await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'agent form does not overflow mobile view');await page.setViewportSize({width:1440,height:900});await page.getByRole('button',{name:'Close agent configuration tab'}).click();assert.equal(await page.locator('[data-view="config"]').count(),0);
- await page.locator('.person[data-agent="a0"]').click({button:'right'});await page.getByRole('menuitem',{name:'Configure Cubed…'}).click();await page.waitForSelector('#agent-config-panel:not([hidden])');await page.getByRole('button',{name:'Close agent configuration tab'}).click();
+ await page.locator('[data-view="explorer"]').click();await page.locator('.person[data-agent="a0"]').click({button:'right'});await page.getByRole('menuitem',{name:'Configure Cubed…'}).click();await page.waitForSelector('#agent-config-panel:not([hidden])');await page.getByRole('button',{name:'Close agent configuration tab'}).click();
  await page.locator('[data-node="channel:backend"]').click({button:'right'});assert.ok(await page.getByRole('menuitem',{name:'Close #backend…'}).isVisible());await page.keyboard.press('Escape');
  await page.locator('[data-node="channel:backend"]').click();
  const tabClose=await page.locator('[data-view="channel:backend"]').evaluate(tab=>{const button=tab.getBoundingClientRect(),close=tab.parentElement.querySelector('.close-tab').getBoundingClientRect();return close.left>=button.left&&close.right<=button.right&&close.top>=button.top&&close.bottom<=button.bottom});assert.equal(tabClose,true,'close button is visually within its tab on the right');
  await page.getByRole('button',{name:'Close #backend tab (keep channel)',exact:true}).click();
  assert.equal(await page.locator('[data-view="channel:backend"]').count(),0);assert.ok(await page.locator('[data-node="channel:backend"]').isVisible());
  await page.waitForTimeout(1700);assert.equal(await page.locator('[data-view="channel:backend"]').count(),0,'closed tab stays closed on refresh');
- assert.equal(await page.locator('#message-tabs button').first().textContent(),'Project Kanban');
+ assert.equal(await page.locator('#message-tabs button').first().getAttribute('aria-label'),'Project Kanban');
  await page.locator('[data-view="fleet"]').click();await page.waitForSelector('[data-run]');
  assert.equal(await page.locator('#fleet-panel').isVisible(),true);await page.locator('[data-run]').click();await page.waitForSelector('#fleet-detail:not([hidden])');
  assert.match(await page.locator('#fleet-evidence').textContent(),/fixture event/);assert.equal(await page.locator('#fleet-evidence script').count(),0);
  await page.locator('[data-view="all"]').click();
- for(const [status,color] of [['working','#69bb7f'],['idle','#eda55e'],['offline','#8d8d95']])assert.equal(await page.locator('.topology-node.'+status).evaluate(n=>document.querySelector('.sigma-topology').topology.sigma.getNodeDisplayData(n.dataset.node).color),color);
+ for(const [status,color] of [['working','#69bb7f'],['idle','#eda55e'],['offline','#8d8d95']])assert.equal(await page.locator('.topology-node.'+status).evaluate(n=>n.style.getPropertyValue('--node-status-color')),color);
  await page.locator('[data-node="channel:backend"]').click();await page.waitForFunction(()=>document.querySelectorAll('.message').length===4);assert.equal(await page.locator('.message').count(),4);
  assert.equal(await page.locator('.thread-row').filter({hasText:'#backend'}).locator('.thread-count').textContent(),'4');
  assert.equal(await page.locator('.message').filter({hasText:'Legacy unknown channel'}).count(),0);
@@ -79,7 +79,7 @@ try {
  assert.ok(await page.locator('.message').filter({hasText:'Direct intervention'}).count());
  await page.locator('[data-node="agent:a0"]').click();assert.equal(await page.locator('.message').count(),8);
  await page.locator('[data-view="matrix"]').click();assert.ok(await page.locator('#matrix-panel').isVisible());
- await page.locator('.thread-row').filter({hasText:'#backend'}).click();assert.ok(await page.locator('#timeline-main').isVisible());
+ await page.locator('[data-view="explorer"]').click();await page.locator('.thread-row').filter({hasText:'#backend'}).click();assert.ok(await page.locator('#timeline-main').isVisible());
  assert.equal(await page.locator('[data-view="channel:backend"]').count(),1);
  await page.waitForTimeout(1700);assert.equal(await page.locator('.message').count(),4);
  await page.locator('[data-view="matrix"]').click();await page.waitForTimeout(1700);assert.ok(await page.locator('#matrix-panel').isVisible());
@@ -94,14 +94,14 @@ try {
  await page.locator('.message').filter({hasText:'Historical general coordination'}).locator('.message-channel').click();
  assert.equal(await page.locator('.message').count(),2);
  await page.locator('[data-view="all"]').click();
- const separator=page.locator('#topology-resizer');await separator.focus();const before=Number(await separator.getAttribute('aria-valuenow'));await page.keyboard.press('ArrowRight');assert.equal(Number(await separator.getAttribute('aria-valuenow')),before+20);
- const box=await separator.boundingBox();await page.mouse.move(box.x+3,box.y+100);await page.mouse.down();await page.mouse.move(box.x+63,box.y+100);await page.mouse.up();assert.ok(Number(await separator.getAttribute('aria-valuenow'))>before+20);
+ const separator=page.locator('#topology-resizer');await separator.focus();const before=Number(await separator.getAttribute('aria-valuenow'));await page.keyboard.press('ArrowLeft');assert.equal(Number(await separator.getAttribute('aria-valuenow')),before+20);
+ const box=await separator.boundingBox();await page.mouse.move(box.x+3,box.y+100);await page.mouse.down();await page.mouse.move(box.x-63,box.y+100);await page.mouse.up();assert.ok(Number(await separator.getAttribute('aria-valuenow'))>before+20);
  await page.locator('#topology-toggle').click();assert.equal(await page.locator('#topology-toggle').getAttribute('aria-expanded'),'false');
  await page.locator('#topology-toggle').click();assert.equal(await page.locator('#topology-toggle').getAttribute('aria-expanded'),'true');
- await page.locator('#inspector-toggle').click();assert.ok(await page.locator('.workspace.inspector-collapsed').count());assert.equal(await page.locator('#inspector-body').isVisible(),false);await page.locator('#inspector-toggle').click();
+ await page.locator('#navigation-toggle').click();assert.ok(await page.locator('.workspace.navigation-collapsed').count());assert.equal(await page.locator('#navigation-toggle').getAttribute('aria-expanded'),'false');await page.locator('#navigation-toggle').click();
  await page.keyboard.press('Alt+t');assert.ok(await page.locator('.workspace.focus-topology').count());assert.equal(await page.locator('.message-workspace').isVisible(),false);
  await page.keyboard.press('Alt+m');assert.ok(await page.locator('.workspace.focus-messages').count());assert.equal(await page.locator('.topology-panel').isVisible(),false);
- await page.keyboard.press('Alt+r');assert.ok(await page.locator('.topology-panel').isVisible());assert.ok(await page.locator('.message-workspace').isVisible());assert.ok(await page.locator('.intervention').isVisible());
+ await page.keyboard.press('Alt+r');assert.ok(await page.locator('.topology-panel').isVisible());assert.ok(await page.locator('.message-workspace').isVisible());assert.ok(await page.locator('.app-navigation').isVisible());
  await page.locator('#controls-tab').click();assert.ok(await page.locator('#composer').isVisible());assert.ok(await page.locator('#membership').isVisible());
  for(const id of ['mesh-controls','composer','membership']){const expanded=await page.locator(`#${id} .section-toggle`).getAttribute('aria-expanded');await page.locator(`#${id} .section-toggle`).click();assert.notEqual(await page.locator(`#${id} .section-toggle`).getAttribute('aria-expanded'),expanded);await page.locator(`#${id} .section-toggle`).click()}
  await page.locator('#explorer-tab').click();assert.ok(await page.locator('#threads').isVisible());
@@ -149,10 +149,10 @@ try {
  assert.equal(await page.locator('#tour-next').isDisabled(),true);
  await page.locator('#tour-previous').click();assert.match(await page.locator('#tour-title').textContent(),/verify/);
  await page.locator('#tour-exit').click();assert.equal(await page.locator('#mesh-tour').evaluate(n=>n.open),false);
- await page.waitForFunction(()=>document.querySelector('[data-view="matrix"]').getAttribute('aria-selected')==='true');
+ await page.waitForFunction(()=>document.querySelector('[data-view="matrix"]').getAttribute('aria-current')==='page');
  assert.equal(await page.locator('.matrix-scroll').evaluate(n=>n.scrollTop),500);
  assert.equal(await page.locator('#help-tour').evaluate(n=>n===document.activeElement),true);
- await page.locator('#inspector-toggle').click();await page.locator('#view-messages').click();await page.locator('#help-tour').click();assert.equal(await page.locator('.workspace.focus-topology').count(),0);await page.locator('#tour-exit').click();await page.waitForFunction(()=>document.querySelector('.workspace.focus-messages.inspector-collapsed'));await page.locator('#view-reset').click();
+ await page.locator('#topology-toggle').click();await page.locator('#view-messages').click();await page.locator('#help-tour').click();assert.equal(await page.locator('.workspace.focus-topology').count(),0);await page.locator('#tour-exit').click();await page.waitForFunction(()=>document.querySelector('.workspace.focus-messages.topology-collapsed'));await page.locator('#view-reset').click();
  await page.setViewportSize({width:390,height:844});await page.locator('#help-tour').click();
  for(let i=0;i<16;i++){
   const box=await page.locator('#tour-card').boundingBox();assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=391&&box.y+box.height<=845,'tour stays on screen');
@@ -166,12 +166,12 @@ try {
  await page.keyboard.press('Tab');assert.equal(await page.locator('#tour-exit').evaluate(n=>n===document.activeElement),true);
  await page.keyboard.press('Shift+Tab');assert.equal(await page.locator('#tour-next').evaluate(n=>n===document.activeElement),true);
  await page.keyboard.press('Escape');
- await page.waitForFunction(()=>!document.querySelector('#mesh-tour').open);
+ await page.waitForFunction(()=>!document.querySelector('#mesh-tour').open);if(await page.locator('#topology-toggle').getAttribute('aria-expanded')==='false')await page.locator('#topology-toggle').click();
  assert.deepEqual(mutations,[],'layout interactions must not mutate broker state');
  await page.locator('[data-node="agent:a0"]').click({button:'right'});await page.getByRole('menuitem',{name:'Configure Cubed…'}).click();await page.locator('#agent-config-model').fill('sample-provider/second');await page.locator('#agent-config-thinking').selectOption('low');await page.locator('#agent-config-reviewed').check();await page.locator('#agent-config-form button[type=submit]').click();
  assert.deepEqual(mutations,['/api/agents/config'],'model configuration is queued only after explicit submission');await page.waitForFunction(()=>/Waiting|queued/.test(document.querySelector('#agent-config-status').textContent));
  await page.getByRole('button',{name:'Close agent configuration tab'}).click();
- await page.getByRole('button',{name:'Close #general channel (keep history and project files)',exact:true}).click();
+ await page.locator('[data-view="explorer"]').click();await page.getByRole('button',{name:'Close #general channel (keep history and project files)',exact:true}).click();
  assert.deepEqual(mutations,['/api/agents/config','/api/channels/close'],'only explicit configuration and channel close mutate the broker');
  state.channels=state.channels.filter(c=>c.name!=='general');state.agents.forEach(a=>{a.channels=a.channels.filter(name=>name!=='general');if(a.activeChannel==='general')a.activeChannel=''});
  state.channels.push({name:'user',userOnly:true,memberCount:state.agents.length,memberNames:[]});await page.waitForTimeout(1700);
@@ -180,7 +180,7 @@ try {
  for(let i=25;i<110;i++)state.agents.push({...state.agents[0],id:`a${i}`,name:`Agent ${i}`,status:'idle'});
  for(let i=0;i<3;i++){const name=`system-${i}`;state.channels.push({name,memberCount:0,memberNames:[]});for(let j=i*25;j<(i+1)*25;j++){state.agents[j].channels=[name];state.agents[j].activeChannel=name}};
  await page.waitForTimeout(1700);assert.equal(await labelsDoNotOverlap(),true,'circular layout remains collision-free with110 agents');
- await page.reload();await page.waitForSelector('[data-node="channel:system-1"]');assert.equal(await page.locator('.topology-node[data-kind="agent"]').count(),110);
+ await page.reload();await page.locator('#topology-toggle').click();await page.waitForSelector('[data-node="channel:system-1"]');assert.equal(await page.locator('.topology-node[data-kind="agent"]').count(),110);
  await page.locator('[data-view="all"]').click();
  // Representative busy dashboard: separated projects and no idle-poll DOM churn.
  state.agents=Array.from({length:65},(_,i)=>({id:i%6===0?`orc-${Math.floor(i/6)}`:`job-fixture-${i}`,name:i%6===0?`Project ${Math.floor(i/6)} orchestrator`:`Worker ${i}`,role:i%6===0?'orchestrator':'reviewer',parentAgentId:i%6===0?null:`orc-${Math.floor(i/6)}`,runId:i%6===0?null:'fixture',projectHash:`project-${Math.floor(i/6)}`,projectName:`Project ${Math.floor(i/6)}`,cwd:`/fixture/${Math.floor(i/6)}`,channels:[`project-${Math.floor(i/6)}`],activeChannel:`project-${Math.floor(i/6)}`,status:'working',enabled:true}));

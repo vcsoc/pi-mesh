@@ -32,8 +32,8 @@ try{
   if(files[path])return route.fulfill({body:(await readFile(resolve(root,files[path]),'utf8'))+(path==='/dashboard.js'?'\nwindow.refresh=refresh;Object.defineProperty(window,"polling",{configurable:true,get:()=>polling});':''),contentType:path.endsWith('.css')?'text/css':/\.(js|mjs)$/.test(path)?'text/javascript':'text/html'});
   return route.fulfill({status:404,body:''});
  });
- await page.goto('http://mesh.test');await page.locator('[data-view="all"]').click();if(await page.locator('#inspector-toggle').getAttribute('aria-expanded')==='false')await page.locator('#inspector-toggle').click();await page.waitForSelector('.message[data-message-id="1000"]');
- for(let i=0;i<3;i++)await page.locator('#load-older').click();
+ await page.goto('http://mesh.test');await page.locator('#topology-toggle').click();await page.locator('[data-view="all"]').click();await page.waitForSelector('.message[data-message-id="1000"]');
+ await page.locator('[data-view="explorer"]').click();for(let i=0;i<3;i++)await page.locator('#load-older').click();await page.locator('[data-view="all"]').click();
  await page.waitForFunction(()=>document.querySelectorAll('.message').length===1000);
  await page.locator('#auto-scroll').uncheck();
  await page.evaluate(()=>{window.freezePolling=true});await page.waitForFunction(()=>!polling);
@@ -52,7 +52,7 @@ try{
  // Actual status, topology membership and policy remain live; alias-scoped history stays correct.
  state.agents[0].status='working';state.agents[0].activity='thinking';state.agents[0].activeChannel='project-1';state.agents[0].channels=['project-1'];state.policy.enabled=false;
  await page.evaluate(()=>refresh());assert.equal(await page.locator('#mesh-enabled').isChecked(),false);assert.equal(await page.locator('[data-node="agent:a0"].working').count(),1);
- await page.locator('.thread-row').filter({hasText:'#project-0'}).click();assert.equal(await page.locator('.message').count(),history.filter(m=>m.scopeChannel==='OLD-PROJECT-0').length);
+ await page.locator('[data-view="explorer"]').click();await page.locator('.thread-row').filter({hasText:'#project-0'}).click();assert.equal(await page.locator('.message').count(),history.filter(m=>m.scopeChannel==='OLD-PROJECT-0').length);
  await page.locator('[data-view="matrix"]').click();assert.equal(await page.locator('tr[data-agent="a0"] .matrix-status').textContent(),'Thinking');assert.equal(await page.locator('tr[data-agent="a0"] .matrix-current').textContent(),'#project-1');
  await page.locator('[data-view="all"]').click();assert.equal(await page.locator('#top-thread').textContent(),'All messages');
  if(!baseline){
@@ -69,10 +69,10 @@ try{
   // Auto-follow reaches the real end of a newly rendered long message, not only its estimated offscreen height.
   await page.locator('#auto-scroll').check();await page.waitForTimeout(400);state.messages=[...state.messages.slice(1),{...next,id:1002,content:'New long message. '.repeat(1000)}];state.totalMessages++;await page.evaluate(()=>refresh());await page.waitForTimeout(150);const bottomGap=await page.locator('#timeline-main').evaluate(n=>n.scrollHeight-n.clientHeight-n.scrollTop);assert.ok(bottomGap<2,`auto-scroll missed the end by ${bottomGap}px`);
   // Failed controls must revert/re-enable even when unchanged-state refreshes deliberately retain DOM nodes.
-  await page.locator('.person[data-agent="a0"] input').click({force:true});await page.waitForFunction(()=>{const input=document.querySelector('.person[data-agent="a0"] input');return input.checked&&!input.disabled});
+  await page.locator('[data-view="explorer"]').click();await page.locator('.person[data-agent="a0"] input').click({force:true});await page.waitForFunction(()=>{const input=document.querySelector('.person[data-agent="a0"] input');return input.checked&&!input.disabled});
   await page.locator('#mesh-enabled').click({force:true});await page.waitForFunction(()=>{const input=document.querySelector('#mesh-enabled');return !input.checked&&!input.disabled});
   // Layout callbacks must not erase persisted orbital scope before the first state response arrives.
-  await page.evaluate(()=>{localStorage.setItem('mesh-topology-mode','orbital');localStorage.setItem('mesh-orbit-system','project-0');localStorage.setItem('mesh-orbit-paused','true')});delay=200;await page.reload();await page.waitForSelector('[data-node="channel:project-0"]');assert.equal(await page.locator('#topology-layout').count(),0,'obsolete orbital preferences cannot resurrect removed views');delay=0;
+  await page.evaluate(()=>{localStorage.setItem('mesh-topology-mode','orbital');localStorage.setItem('mesh-orbit-system','project-0');localStorage.setItem('mesh-orbit-paused','true')});delay=200;await page.reload();await page.locator('#topology-toggle').click();await page.waitForSelector('[data-node="channel:project-0"]');assert.equal(await page.locator('#topology-layout').count(),0,'obsolete orbital preferences cannot resurrect removed views');delay=0;
  }
  assert.deepEqual(errors,[]);assert.deepEqual(posts,baseline?[]:['/api/agents/toggle','/api/policy/global'],'only intentional denied fixture controls are submitted; no running broker is contacted');
  console.log(JSON.stringify({heartbeat,newMessage:added,maxInflight,stateRequests,fleetRequests}));

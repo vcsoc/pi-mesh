@@ -116,7 +116,10 @@ el.loadOlder.addEventListener("click",async()=>{const oldest=messages[0]?.id;if(
 // Workbench state stays independent from polling: selection and open tabs survive refreshes.
 const openChannels=new Set(selectedChannel?[selectedChannel]:[]);
 let activeView=selectedChannel?`channel:${selectedChannel}`:'kanban',configAgentId='',configCatalog=[],configCatalogGeneration=null,configLoadTicket=0;
-let topologySignature="",matrixSignature="",workbenchSignature='',fleetViewActive=false,usageViewActive=false;
+let topologySignature="",matrixSignature="",workbenchSignature='',fleetViewActive=false,usageViewActive=false,previewNavigation=false;
+function filterNavigation(){const query=$('navigation-search').value.trim().toLocaleLowerCase();for(const b of $('message-tabs').querySelectorAll('button[data-view]')){const hidden=!!query&&!b.getAttribute('aria-label').toLocaleLowerCase().includes(query);if(b.parentElement.classList.contains('workspace-tab-group'))b.parentElement.hidden=hidden;else b.hidden=hidden}}
+try{const page=decodeURIComponent(location.hash.slice(1));if(['kanban','matrix','all','fleet','usage','explorer','controls'].includes(page))activeView=page;else if(page.startsWith('channel:')){selectedChannel=page.slice(8);openChannels.add(selectedChannel);activeView=page}}catch{}
+window.addEventListener('hashchange',()=>{if(previewNavigation)return;try{const page=decodeURIComponent(location.hash.slice(1));if(page!==activeView&&(['kanban','matrix','all','fleet','usage','explorer','controls'].includes(page)||page==='config'&&configAgentId||page.startsWith('channel:')&&channels.some(c=>c.name===page.slice(8))))activateView(page)}catch{}});
 let topologyFit=true;
 let topologyQuery='',selectedProject='',topologyProject='';
 function projectState(){window.dispatchEvent(new CustomEvent('mesh-project-state',{detail:{projects:projects(),selectedProject}}))}
@@ -157,6 +160,7 @@ function renderAgentConfig(){
 function updateConfigThinking(){const model=$('agent-config-model').value.trim(),available=configCatalog.find(item=>item.id===model)?.levels||[],current=$('agent-config-thinking').value,select=$('agent-config-thinking');select.replaceChildren();option(select,'','Keep current thinking level');for(const level of available)option(select,level,level);select.value=available.includes(current)?current:'';const valid=configCatalog.some(item=>item.id===model);$('agent-config-model').setCustomValidity(valid?'':'Choose an exact model advertised by this target.');$('agent-config-error').textContent=valid?'':'Choose an exact target-advertised model; typing a name does not establish availability.';if(valid)$('agent-config-provider').value=model.split('/')[0];}
 function filterConfigModels(){const provider=$('agent-config-provider').value;$('agent-config-models').replaceChildren(...configCatalog.filter(item=>!provider||item.id.split('/')[0]===provider).map(item=>new Option(item.id,item.id)));}
 async function openAgentConfig(agentId){
+ revealPage();
  const agent=agents.find(a=>a.id===agentId);if(!agent)return;const ticket=++configLoadTicket;configAgentId=agentId;configCatalog=[];configCatalogGeneration=null;$('agent-config-reviewed').checked=false;$('agent-config-provider').replaceChildren();$('agent-config-models').replaceChildren();$('agent-config-model').value=agent.model||'';updateConfigThinking();activateView('config');
  try{const result=await request(`/api/agents/config?agentId=${encodeURIComponent(agentId)}&catalog=1`);if(configAgentId!==agentId||ticket!==configLoadTicket)return;if(result.agent?.generation!==agents.find(item=>item.id===agentId)?.generation)throw Error('Target changed while loading. Reload the catalog.');configCatalog=result.models||[];configCatalogGeneration=result.agent.generation;$('agent-config-provider').replaceChildren(...[...new Set(configCatalog.map(item=>item.id.split('/')[0]))].sort().map(value=>new Option(value,value)));$('agent-config-provider').value=agent.model?.split('/')[0]||'';filterConfigModels();updateConfigThinking();renderAgentConfig();$('agent-config-model').focus()}
  catch(error){if(ticket===configLoadTicket)$('agent-config-status').textContent=error.message}
@@ -168,30 +172,37 @@ $('agent-config-reload').onclick=()=>openAgentConfig(configAgentId);
 $('agent-config-target').onchange=()=>openAgentConfig($('agent-config-target').value);
 $('agent-settings-open').onclick=()=>{const id=selectedParticipant||agents.find(item=>item.configurable)?.id||agents[0]?.id;if(id)void openAgentConfig(id);else dashboardNotice('No registered agents to configure.');};
 $('agent-config-form').addEventListener('submit',async event=>{event.preventDefault();const agent=agents.find(a=>a.id===configAgentId),model=$('agent-config-model').value.trim(),thinkingLevel=$('agent-config-thinking').value,status=$('agent-config-status');if(!agent?.configurable||agent.generation!==configCatalogGeneration)return status.textContent='Agent/catalog is unavailable or stale. Reload it.';const advertised=configCatalog.find(item=>item.id===model);if(!advertised||thinkingLevel&&!advertised.levels.includes(thinkingLevel))return status.textContent='Select an exact advertised model and supported thinking level.';if(model===agent.model&&!thinkingLevel)return status.textContent='Choose a different model or thinking level.';if(!$('agent-config-reviewed').checked)return status.textContent='Review the selected target/model and check the confirmation box.';status.textContent='Sending request…';try{const result=await request('/api/agents/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agentId:agent.id,generation:configCatalogGeneration,...(model&&model!==agent.model?{model}:{}),...(thinkingLevel?{thinkingLevel}:{})})});status.textContent=`Request ${result.request.id} queued; waiting for the target Pi session. This is not yet applied.`;await refresh()}catch(error){status.textContent=error.message}});
+function revealPage(){if(focusMode==='topology')setFocusMode('normal');if(innerWidth<=1000&&$('topology-toggle').getAttribute('aria-expanded')==='true')$('topology-toggle').click()}
 function activateView(view){
- if(view==='kanban'||view==="matrix"||view==="fleet"||view==='usage'||view==='config'&&configAgentId){activeView=view;renderWorkbench();return}
+ if(view==='kanban'||view==="matrix"||view==="fleet"||view==='usage'||view==='explorer'||view==='controls'||view==='config'&&configAgentId){activeView=view;renderWorkbench();return}
  selectChannel(view.startsWith("channel:")?view.slice(8):"");
 }
 function renderWorkbench(){
  for(const name of openChannels)if(!channels.some(c=>c.name===name))openChannels.delete(name);
  if(activeView.startsWith("channel:")&&!openChannels.has(activeView.slice(8))){activeView="all";selectedChannel=""}
  const tabs=$("message-tabs"),focused=document.activeElement?.dataset.view;
- const views=[['kanban','Project Kanban'],["matrix","Membership matrix"],["all","All messages"],["fleet","Work fleet"],["usage","Daily usage"],...(configAgentId?[["config",`Configure ${agents.find(a=>a.id===configAgentId)?.name||'agent'}`]]:[]),...[...openChannels].map(name=>[`channel:${name}`,`#${name}`])];
+ const views=[['kanban','Project Kanban'],["matrix","Membership matrix"],["all","All messages"],["fleet","Work fleet"],["usage","Daily usage"],['explorer','Explorer'],['controls','Intervene & manage'],...(configAgentId?[["config",`Configure ${agents.find(a=>a.id===configAgentId)?.name||'agent'}`]]:[]),...[...openChannels].map(name=>[`channel:${name}`,`#${name}`])];
  const signature=JSON.stringify([views,activeView]);if(signature!==workbenchSignature){workbenchSignature=signature;tabs.replaceChildren();
  for(const [view,label] of views){
-  const button=make("button","workspace-tab",label);button.type="button";button.role="tab";button.dataset.view=view;
-  button.id=`workspace-tab-${views.findIndex(item=>item[0]===view)}`;
-  button.setAttribute("aria-selected",String(activeView===view));button.tabIndex=activeView===view?0:-1;
-  button.setAttribute("aria-controls",view==='kanban'?'kanban-panel':view==="matrix"?"matrix-panel":view==="fleet"?"fleet-panel":view==='usage'?'usage-panel':view==='config'?'agent-config-panel':"timeline-main");
+  const button=make("button","workspace-tab");button.append(make('span','nav-icon',({kanban:'▦',matrix:'▤',all:'☷',fleet:'◇',usage:'◴',explorer:'◎',controls:'⚙',config:'⚙'})[view]||'◌'),make('span','nav-label',label));button.firstChild.setAttribute('aria-hidden','true');button.type="button";button.dataset.view=view;button.setAttribute('aria-label',label);button.title=label;
+  button.id=view==='explorer'?'explorer-tab':view==='controls'?'controls-tab':`workspace-tab-${views.findIndex(item=>item[0]===view)}`;
+  if(view==='explorer'||view==='controls')button.dataset.inspector=view==='explorer'?'explorer-panel':'controls-panel';
+  if(activeView===view)button.setAttribute('aria-current','page');button.tabIndex=0;
+  button.setAttribute("aria-controls",view==='kanban'?'kanban-panel':view==="matrix"?"matrix-panel":view==="fleet"?"fleet-panel":view==='usage'?'usage-panel':view==='config'?'agent-config-panel':view==='explorer'?'explorer-panel':view==='controls'?'controls-panel':"timeline-main");
   if(view==="matrix")button.title="Pinned membership matrix";
-  button.addEventListener("click",()=>activateView(view));
+  button.addEventListener("click",()=>{revealPage();activateView(view)});
   if(view.startsWith('channel:')||view==='config'){const group=make('span','workspace-tab-group'),close=make('button','close-tab','×');close.type='button';close.title=view==='config'?'Close agent configuration tab':`Close ${label} tab (keep channel)`;close.setAttribute('aria-label',close.title);close.addEventListener('click',()=>{if(view==='config')configAgentId='';else openChannels.delete(view.slice(8));if(activeView===view)activateView('all');else renderWorkbench()});group.append(button,close);tabs.append(group)}else tabs.append(button);
-  if(activeView===view)$(view==='kanban'?'kanban-panel':view==="matrix"?"matrix-panel":view==="fleet"?"fleet-panel":view==='usage'?'usage-panel':view==='config'?'agent-config-panel':"timeline-main").setAttribute("aria-labelledby",button.id);
+  if(activeView===view)$(view==='kanban'?'kanban-panel':view==="matrix"?"matrix-panel":view==="fleet"?"fleet-panel":view==='usage'?'usage-panel':view==='config'?'agent-config-panel':view==='explorer'?'explorer-panel':view==='controls'?'controls-panel':"timeline-main").setAttribute("aria-labelledby",button.id);
  }
  if(focused)tabs.querySelectorAll("button").forEach(b=>{if(b.dataset.view===focused)b.focus({preventScroll:true})});
  }
+ $('page-title').textContent=views.find(([view])=>view===activeView)?.[1]||'All messages';$('page-breadcrumb').textContent=selectedProject?projects().find(p=>p.hash===selectedProject)?.name||'Workspace':'Workspace';
+ $('explorer-panel').hidden=activeView!=='explorer';$('controls-panel').hidden=activeView!=='controls';
+ if(activeView==='explorer'||activeView==='controls'){el.topThread.textContent=activeView==='explorer'?'Explorer':'Intervene & manage';el.topMessageCount.textContent=''}
+ if(!previewNavigation&&location.hash!=='#'+encodeURIComponent(activeView))history.pushState(null,'',location.pathname+location.search+'#'+encodeURIComponent(activeView));
+ filterNavigation();
  $('kanban-panel').hidden=activeView!=='kanban';if(activeView==='kanban'){projectState();window.dispatchEvent(new CustomEvent('mesh-kanban-view'));el.topThread.textContent='Project Kanban';el.topMessageCount.textContent='· task ownership, decisions and comments'}
- $("matrix-panel").hidden=activeView!=="matrix";el.timeline.hidden=activeView==='kanban'||activeView==="matrix"||activeView==="fleet"||activeView==='usage'||activeView==='config';
+ $("matrix-panel").hidden=activeView!=="matrix";el.timeline.hidden=activeView==='kanban'||activeView==="matrix"||activeView==="fleet"||activeView==='usage'||activeView==='config'||activeView==='explorer'||activeView==='controls';
  $("fleet-panel").hidden=activeView!=="fleet";$('agent-config-panel').hidden=activeView!=='config';if(activeView==='config')renderAgentConfig();if(fleetViewActive!==(activeView==='fleet')){fleetViewActive=activeView==='fleet';window.dispatchEvent(new CustomEvent('mesh-fleet-view',{detail:fleetViewActive}))}
  $('usage-panel').hidden=activeView!=='usage';if(usageViewActive!==(activeView==='usage')){usageViewActive=activeView==='usage';window.dispatchEvent(new CustomEvent('mesh-usage-view',{detail:usageViewActive}))}
  if(activeView==='usage'){el.topThread.textContent='Daily agent usage';el.topMessageCount.textContent='· dates, tokens, cache and estimated cost'}
@@ -205,9 +216,9 @@ function renderWorkbench(){
 function topologyContext(node,event){
  if(!node)return;
  const branch=[{label:node.childCount?'Focus this branch':'Focus this node',action:()=>topologyView.focus(node.id)},...(node.childCount?[{label:node.expanded?`Collapse group (${node.descendantCount} descendants)`:`Expand group (${node.hiddenCount} hidden)`,action:()=>topologyView.setCollapsed(node.id,node.expanded)},{label:'Expand entire branch',action:()=>topologyView.expandBranch(node.id)}]:[])];
- if(node.kind==='project'){showContextMenu(event,[...branch,...(projects().some(p=>p.hash===node.project)?[{label:`Open project Kanban: ${node.label}`,action:()=>{showProject(node.project,false);activateView('kanban')}},{label:`Focus project ${node.label} only`,action:()=>showProject(node.project)}]:[]),{label:'Show full topology',action:()=>showProject('')},{label:'Collapse all groups',action:()=>topologyView.expandAll(false)},{label:'Expand all groups',action:()=>topologyView.expandAll(true)}]);return}
- if(node.kind==='channel'){const c=channels.find(c=>c.name===node.channel);if(!c)return;showContextMenu(event,[...branch,{label:'Show system',action:()=>showSystem(c.name)},{label:'Open channel conversation',action:()=>selectChannel(c.name)},{label:'Inspect membership matrix',action:()=>activateView('matrix')},...(c.userOnly?[]:[{label:`Close #${c.name}…`,danger:true,action:()=>closeChannel(c.name)}])]);return}
- const a=agents.find(a=>a.id===node.agent);if(!a)return;showContextMenu(event,[...branch,{label:'View agent messages',action:()=>selectAgentNode(a.id,false)},{label:`Configure ${a.name}…`,action:()=>openAgentConfig(a.id)},{label:'Send user intervention…',action:()=>{el.to.value=a.id;el.to.dispatchEvent(new Event('change'));openSection('composer');$('controls-tab').click();el.content.focus()}},{label:a.enabled===false?'Enable agent':'Disable agent',action:()=>updatePolicy('/api/agents/toggle',{agentId:a.id,enabled:a.enabled===false},'Updating agent…','Agent updated.')},{label:'Disconnect agent',danger:true,action:()=>removeAgentFromMesh(a.id)}]);
+ if(node.kind==='project'){showContextMenu(event,[...branch,...(projects().some(p=>p.hash===node.project)?[{label:`Open project Kanban: ${node.label}`,action:()=>{revealPage();showProject(node.project,false);activateView('kanban')}},{label:`Focus project ${node.label} only`,action:()=>showProject(node.project)}]:[]),{label:'Show full topology',action:()=>showProject('')},{label:'Collapse all groups',action:()=>topologyView.expandAll(false)},{label:'Expand all groups',action:()=>topologyView.expandAll(true)}]);return}
+ if(node.kind==='channel'){const c=channels.find(c=>c.name===node.channel);if(!c)return;showContextMenu(event,[...branch,{label:'Show system',action:()=>showSystem(c.name)},{label:'Open channel conversation',action:()=>{revealPage();selectChannel(c.name)}},{label:'Inspect membership matrix',action:()=>{revealPage();activateView('matrix')}},...(c.userOnly?[]:[{label:`Close #${c.name}…`,danger:true,action:()=>closeChannel(c.name)}])]);return}
+ const a=agents.find(a=>a.id===node.agent);if(!a)return;showContextMenu(event,[...branch,{label:'View agent messages',action:()=>{revealPage();selectAgentNode(a.id,false)}},{label:`Configure ${a.name}…`,action:()=>openAgentConfig(a.id)},{label:'Send user intervention…',action:()=>{el.to.value=a.id;el.to.dispatchEvent(new Event('change'));openSection('composer');$('controls-tab').click();el.content.focus()}},{label:a.enabled===false?'Enable agent':'Disable agent',action:()=>updatePolicy('/api/agents/toggle',{agentId:a.id,enabled:a.enabled===false},'Updating agent…','Agent updated.')},{label:'Disconnect agent',danger:true,action:()=>removeAgentFromMesh(a.id)}]);
 }
 function renderTopology(){
  if(!stateLoaded||document.hidden||$('topology-body').hidden||document.querySelector('.workspace').classList.contains('focus-messages'))return;
@@ -249,38 +260,30 @@ function initializeSections(){
 }
 function initializeWorkbench(){
  initializeSections();
- const explorer=$("explorer-panel");explorer.role="tabpanel";explorer.setAttribute("aria-labelledby","explorer-tab");$('inspector-body').append(explorer);
- for(const button of document.querySelectorAll("[data-inspector]"))button.addEventListener("click",()=>{
-  for(const tab of document.querySelectorAll("[data-inspector]")){const active=button===tab;tab.setAttribute("aria-selected",String(active));tab.tabIndex=active?0:-1;$(tab.dataset.inspector).hidden=!active}
- });
- // Standard keyboard tab navigation, scoped so it never navigates timeline messages.
- for(const list of document.querySelectorAll('[role="tablist"]'))list.addEventListener("keydown",event=>{
-  if(!["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;
-  event.preventDefault();event.stopPropagation();const tabs=[...list.querySelectorAll('[role="tab"]')],index=tabs.indexOf(document.activeElement);
-  const next=event.key==="Home"?0:event.key==="End"?tabs.length-1:(index+(event.key==="ArrowRight"?1:-1)+tabs.length)%tabs.length;
-  tabs[next].click();list.querySelectorAll('[role="tab"]')[next]?.focus();
- });
+ const main=document.querySelector('.message-workspace');main.append($('explorer-panel'),$('controls-panel'));document.querySelector('.intervention').remove();
+ $('message-tabs').addEventListener('keydown',event=>{if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();event.stopPropagation();const buttons=[...$('message-tabs').querySelectorAll('button[data-view]')].filter(b=>!b.hidden&&!b.parentElement.hidden),index=buttons.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(['ArrowRight','ArrowDown'].includes(event.key)?1:buttons.length-1))%buttons.length;buttons[next]?.click();$('message-tabs').querySelector(`[data-view="${CSS.escape(buttons[next]?.dataset.view||'')}"]`)?.focus()});
  const workspace=document.querySelector(".workspace"),resizer=$("topology-resizer"),toggle=$("topology-toggle");
- const inspectorWidth=()=>workspace.clientWidth>800?document.querySelector(".intervention").getBoundingClientRect().width:0;
- let preferredWidth=Number(localStorage.getItem("mesh-topology-width"))||Math.round((workspace.clientWidth-inspectorWidth())*.45),width=preferredWidth;
- const limit=()=>Math.max(180,Math.min(700,workspace.clientWidth-inspectorWidth()-266));
+ const navigationWidth=()=>document.querySelector('.app-navigation').getBoundingClientRect().width;
+ let preferredWidth=Number(localStorage.getItem('mesh-topology-width'))||560,width=preferredWidth;
+ const limit=()=>Math.max(180,Math.min(900,workspace.clientWidth-navigationWidth()-366));
  function resize(value,persist=false){width=Math.max(180,Math.min(limit(),value));workspace.style.setProperty("--topology-width",`${width}px`);resizer.setAttribute("aria-valuenow",String(Math.round(width)));resizer.setAttribute("aria-valuemax",String(Math.round(limit())));if(persist){preferredWidth=width;localStorage.setItem("mesh-topology-width",String(width))}}
- function collapse(value){workspace.classList.toggle("topology-collapsed",value);$("topology-body").hidden=value;toggle.textContent=value?"›":"‹";toggle.setAttribute("aria-expanded",String(!value));toggle.title=value?"Expand topology":"Collapse topology";resizer.tabIndex=value?-1:0;localStorage.setItem("mesh-topology-collapsed",String(value));if(!value)requestAnimationFrame(()=>{renderTopology();applyTopologyZoom()})}
- toggle.addEventListener("click",()=>collapse(!workspace.classList.contains("topology-collapsed")));
+ function collapse(value){workspace.classList.toggle('topology-collapsed',value);$('topology-body').hidden=value;toggle.textContent=value?'◉':'›';toggle.setAttribute('aria-expanded',String(!value));toggle.title=value?'Expand topology':'Collapse topology';resizer.tabIndex=value?-1:0;if(!value)requestAnimationFrame(()=>{topologySignature='';renderTopology();applyTopologyZoom()})}
+ toggle.addEventListener('click',()=>{const closing=!workspace.classList.contains('topology-collapsed');if(closing&&workspace.classList.contains('focus-topology'))setFocusMode('normal');collapse(closing)});
  resizer.addEventListener("pointerdown",event=>{if(event.button!==0||workspace.classList.contains("topology-collapsed"))return;event.preventDefault();resizer.setPointerCapture(event.pointerId);resizer.classList.add("dragging")});
- resizer.addEventListener("pointermove",event=>{if(resizer.hasPointerCapture(event.pointerId))resize(event.clientX-workspace.getBoundingClientRect().left)});
+ resizer.addEventListener("pointermove",event=>{if(resizer.hasPointerCapture(event.pointerId))resize(workspace.getBoundingClientRect().right-event.clientX-10)});
  resizer.addEventListener("pointerup",event=>{if(resizer.hasPointerCapture(event.pointerId)){resizer.releasePointerCapture(event.pointerId);resize(width,true)}resizer.classList.remove("dragging")});
  resizer.addEventListener("lostpointercapture",()=>resizer.classList.remove("dragging"));
- resizer.addEventListener("keydown",event=>{if(!["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;event.preventDefault();event.stopPropagation();resize(event.key==="Home"?180:event.key==="End"?limit():width+(event.key==="ArrowRight"?20:-20),true)});
- window.addEventListener("resize",()=>resize(preferredWidth));resize(preferredWidth);collapse(localStorage.getItem("mesh-topology-collapsed")==="true");
+ resizer.addEventListener("keydown",event=>{if(!["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;event.preventDefault();event.stopPropagation();resize(event.key==="Home"?180:event.key==="End"?limit():width+(event.key==="ArrowLeft"?20:-20),true)});
+ $('navigation-search').addEventListener('input',filterNavigation);$('navigation-search').addEventListener('keydown',event=>{if(event.key==='Escape'){$('navigation-search').value='';filterNavigation()}else if(event.key==='Enter')$('message-tabs').querySelector('button[data-view]:not([hidden])')?.click()});
+ const navToggle=$('navigation-toggle');function collapseNavigation(value){workspace.classList.toggle('navigation-collapsed',value);navToggle.setAttribute('aria-expanded',String(!value));navToggle.title=value?'Expand sidebar':'Collapse sidebar';navToggle.lastChild.textContent=navToggle.title;navToggle.firstChild.textContent=value?'⇥':'⇤';localStorage.setItem('mesh-navigation-collapsed',String(value));resize(preferredWidth)}navToggle.addEventListener('click',()=>collapseNavigation(!workspace.classList.contains('navigation-collapsed')));collapseNavigation(localStorage.getItem('mesh-navigation-collapsed')==='true');
+ $('navigation-help').addEventListener('click',()=>$('help-tour').click());window.addEventListener('resize',()=>resize(preferredWidth));resize(preferredWidth);collapse(true);
 }
 initializeWorkbench();
 const workspace=document.querySelector('.workspace');let focusMode='normal';
-function setInspectorCollapsed(collapsed,persist=true){workspace.classList.toggle('inspector-collapsed',collapsed);$('inspector-toggle').setAttribute('aria-expanded',String(!collapsed));$('inspector-toggle').textContent=collapsed?'‹':'›';$('inspector-toggle').title=collapsed?'Expand right panel':'Collapse right panel';if(persist)localStorage.setItem('mesh-inspector-collapsed',String(collapsed));requestAnimationFrame(()=>{renderTopology();applyTopologyZoom()})}
-function setFocusMode(mode,persist=true){focusMode=mode;workspace.classList.toggle('focus-topology',mode==='topology');workspace.classList.toggle('focus-messages',mode==='messages');if(mode==='topology'&&$('topology-toggle').getAttribute('aria-expanded')==='false')$('topology-toggle').click();if(mode==='normal'){if($('topology-toggle').getAttribute('aria-expanded')==='false')$('topology-toggle').click();setInspectorCollapsed(false,persist)}requestAnimationFrame(()=>{renderTopology();applyTopologyZoom()})}
-$('inspector-toggle').addEventListener('click',()=>setInspectorCollapsed(!workspace.classList.contains('inspector-collapsed')));
+function setFocusMode(mode){focusMode=mode;workspace.classList.toggle('focus-topology',mode==='topology');workspace.classList.toggle('focus-messages',mode==='messages');if(mode==='topology'&&$('topology-toggle').getAttribute('aria-expanded')==='false')$('topology-toggle').click();$('topology-expand-view').setAttribute('aria-pressed',String(mode==='topology'));$('topology-expand-view').title=mode==='topology'?'Restore topology side panel':'Expand topology across workspace';$('topology-expand-view').setAttribute('aria-label',$('topology-expand-view').title);requestAnimationFrame(()=>{topologySignature='';renderTopology();applyTopologyZoom()})}
+$('topology-expand-view').addEventListener('click',()=>setFocusMode(focusMode==='topology'?'normal':'topology'));
 $('view-topology').addEventListener('click',()=>setFocusMode('topology'));$('view-messages').addEventListener('click',()=>setFocusMode('messages'));$('view-reset').addEventListener('click',()=>setFocusMode('normal'));
-setInspectorCollapsed(localStorage.getItem('mesh-inspector-collapsed')!=='false',false);
+// The right topology panel starts collapsed on every visit; controls are pages.
 document.addEventListener('keydown',event=>{if(!event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||!['t','m','r'].includes(event.key.toLowerCase())||document.querySelector('#mesh-tour')?.open)return;const target=event.target;if(target instanceof HTMLElement&&target.closest('input,textarea,select,[contenteditable=true]'))return;event.preventDefault();setFocusMode(event.key.toLowerCase()==='t'?'topology':event.key.toLowerCase()==='m'?'messages':'normal')});
 function updateTopologyModeUI(){
  $('topology-overview').hidden=!topologyProject;$('topology-system-label').hidden=!topologyProject;
@@ -319,12 +322,12 @@ void refresh();setInterval(()=>scheduleRefresh(0),1500);
  const dialog=$('mesh-tour'),card=$('tour-card'),highlight=$('tour-highlight');
  const steps=[
   ['.topbar','Welcome to Agent Mesh','This walkthrough shows how to monitor agents, read conversations and steer work. Use Next or Previous, or your left/right arrow keys. Exit returns you to your previous view.'],
-  ['.topology-panel','Understand the topology','Channel and agent nodes show who is connected. Green means working, orange idle and grey offline. Solid links mark an active channel; dashed links mean joined only. Click a node after the tour to filter its conversation.',null,'explorer',true],
+  ['.topology-panel','Understand the topology','Channel and agent nodes show who is connected. Agent fills identify roles; small status dots indicate working, idle or offline. Solid links mark an active channel; dashed links mean joined only. Click a node after the tour to filter its conversation.',null,'explorer',true],
   ['.topology-tools','Focus a project','Radial project islands contain channels and real parent/child agent groups. Double-click a parent to fold or unfold its branch; other islands make room and the selected group stays in view. Right-click any node for its type-specific actions, project Kanban or project-only view. Drag to pan and scroll to zoom.',null,'explorer',true],
   ['.topology-search','Focus on an agent or channel','Search names, projects, models or statuses. Matches are highlighted along with connected spheres; unrelated nodes fade. Clear search to restore the full graph.',null,'explorer',true],
   ['.channel-panel','Browse channels','Select a channel to open its conversation. Project/folder names identify shared project channels. The red × here closes the actual channel while keeping history and project files; the × on a conversation tab only closes that tab. The protected #user inbox is for user interventions and agent replies to you—not peer-to-peer coordination.',null,'explorer'],
   ['.participant-panel','Find and configure a participant','Click the Channels or Participants heading to fold or unfold that panel. Right-click an agent here or in the topology to open its configuration tab and request its exact Pi model and thinking level. The target Pi session applies the change when idle and reports an acknowledgment; an active approved child job cannot be reconfigured.',null,'explorer'],
-  ['#inspector-toggle','Focus your workspace','Collapse the right panel with its arrow. Alt+T shows only topology; Alt+M shows only messages; Alt+R returns to all three panels. Browser-reserved shortcuts may require using the visible controls.',null,'explorer'],
+  ['#navigation-toggle','Focus your workspace','Each item in the left navigation opens one page. Collapse the sidebar to an icon rail. The right topology starts closed; its expand button spans the page and right pane while preserving navigation. Alt+T expands the map; Alt+M focuses the page; Alt+R restores the split workspace.',null,'explorer'],
   ['#matrix-panel','Check memberships at a glance','The matrix separates activity Status from channel membership. Selected marks the active peer channel; Joined is membership only. Click a channel cell to read its conversation. Headers remain visible while you scroll.','matrix'],
   ['#timeline-main','Read and navigate messages','All messages shows the timeline; channel tabs narrow it down. Each message records its sender, destination, intent and time. Select a message and use arrow keys to browse after closing this walkthrough.','all'],
   ['.top-actions','Keep up with live work','Auto-scroll follows new messages; turn it off when reading history. Jump to latest returns to the newest message. Adjust text size or switch the theme here. Export downloads the message history.'],
@@ -362,8 +365,8 @@ void refresh();setInterval(()=>scheduleRefresh(0),1500);
  function exit(){if(dialog.open)dialog.close()}
  $('help-tour').addEventListener('click',()=>{
   if(dialog.open)return;
-  saved={sections:[...document.querySelectorAll('.section-toggle')].map(b=>({id:b.closest('.context-panel,.compose').id,collapsed:b.getAttribute('aria-expanded')==='false'})),participant:selectedParticipant,channel:selectedChannel,storedChannel:localStorage.getItem(channelKey),recipient:el.to.value,member:el.memberAgent.value,view:activeView,inspector:document.querySelector('[data-inspector][aria-selected="true"]')?.id,expanded:$('topology-toggle').getAttribute('aria-expanded'),inspectorCollapsed:workspace.classList.contains('inspector-collapsed'),focusMode,scroll:[...document.querySelectorAll('.workspace *')].filter(n=>n.scrollHeight>n.clientHeight||n.scrollWidth>n.clientWidth).map(n=>({node:n,id:n.id,cls:n.className,top:n.scrollTop,left:n.scrollLeft}))};
-  setFocusMode('normal',false);setInspectorCollapsed(false,false);index=0;dialog.showModal();show();timer=setInterval(position,250);
+  saved={sections:[...document.querySelectorAll('.section-toggle')].map(b=>({id:b.closest('.context-panel,.compose').id,collapsed:b.getAttribute('aria-expanded')==='false'})),participant:selectedParticipant,channel:selectedChannel,storedChannel:localStorage.getItem(channelKey),recipient:el.to.value,member:el.memberAgent.value,view:activeView,inspector:document.querySelector('[data-inspector][aria-current="page"]')?.id,expanded:$('topology-toggle').getAttribute('aria-expanded'),hash:location.hash,focusMode,scroll:[...document.querySelectorAll('.workspace *')].filter(n=>n.scrollHeight>n.clientHeight||n.scrollWidth>n.clientWidth).map(n=>({node:n,id:n.id,cls:n.className,top:n.scrollTop,left:n.scrollLeft}))};
+  previewNavigation=true;setFocusMode('normal');index=0;dialog.showModal();show();timer=setInterval(position,250);
  });
  $('tour-next').addEventListener('click',()=>{if(index<steps.length-1){index++;show()}});
  $('tour-previous').addEventListener('click',()=>{if(index>0){index--;show()}});
@@ -375,9 +378,9 @@ void refresh();setInterval(()=>scheduleRefresh(0),1500);
   if(event.key==='Tab'){event.preventDefault();event.stopImmediatePropagation();const buttons=[...card.querySelectorAll('button:not(:disabled)')],i=buttons.indexOf(document.activeElement);buttons[i<0?(event.shiftKey?buttons.length-1:0):(i+(event.shiftKey?-1:1)+buttons.length)%buttons.length].focus()}
  },true);
  dialog.addEventListener('close',()=>{
-  clearInterval(timer);setFocusMode(saved.focusMode,false);setInspectorCollapsed(saved.inspectorCollapsed,false);for(const section of saved.sections)setSection($(section.id),section.collapsed,false);activeView=saved.view;selectedParticipant=saved.participant;selectedChannel=saved.channel;
+  clearInterval(timer);setFocusMode(saved.focusMode);for(const section of saved.sections)setSection($(section.id),section.collapsed,false);activeView=saved.view;selectedParticipant=saved.participant;selectedChannel=saved.channel;
   if(saved.storedChannel===null)localStorage.removeItem(channelKey);else localStorage.setItem(channelKey,saved.storedChannel);
-  renderAgents();renderChannels();renderMessages();el.to.value=saved.recipient;el.memberAgent.value=saved.member;
+  history.replaceState(null,'',location.pathname+location.search+saved.hash);previewNavigation=false;renderAgents();renderChannels();renderMessages();el.to.value=saved.recipient;el.memberAgent.value=saved.member;
   if(saved.inspector)$(saved.inspector)?.click();
   if($('topology-toggle').getAttribute('aria-expanded')!==saved.expanded)$('topology-toggle').click();
   for(const item of saved.scroll){const node=item.node.isConnected?item.node:item.id?$(item.id):typeof item.cls==='string'&&item.cls?document.getElementsByClassName(item.cls)[0]:null;if(node){node.scrollTop=item.top;node.scrollLeft=item.left}}

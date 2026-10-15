@@ -22,20 +22,26 @@
       <div class="font-scale" aria-label="Message text size"><span>Message text</span><button id="font-down" type="button" aria-label="Decrease message text size">−</button><output id="font-level">100%</output><button id="font-up" type="button" aria-label="Increase message text size">+</button></div>
       <button id="jump-latest" class="icon-button" type="button" title="Jump to latest message" aria-label="Jump to latest message">⤓</button>
       <button id="theme-toggle" class="icon-button" type="button" title="Switch theme" aria-label="Switch theme">☀</button>
-      <div class="layout-shortcuts" role="group" aria-label="Workspace layout"><button id="view-topology" type="button" title="Topology only (Alt+T)" aria-label="Topology only (Alt+T)">◉</button><button id="view-messages" type="button" title="Messages only (Alt+M)" aria-label="Messages only (Alt+M)">▤</button><button id="view-reset" type="button" title="Show all panels (Alt+R)" aria-label="Show all panels (Alt+R)">▥</button></div>
+      <div class="layout-shortcuts" role="group" aria-label="Workspace layout"><button id="view-topology" type="button" title="Topology only (Alt+T)" aria-label="Topology only (Alt+T)">◉</button><button id="view-messages" type="button" title="Messages only (Alt+M)" aria-label="Messages only (Alt+M)">▤</button><button id="view-reset" type="button" title="Restore workspace layout (Alt+R)" aria-label="Restore workspace layout (Alt+R)">▥</button></div>
       <button id="agent-settings-open" type="button">Agent settings</button>
       <button id="help-tour" type="button" aria-haspopup="dialog">Help</button>
       <a href="/api/export">Export</a>
     </div>
   </header>
 
-  <div class="workspace">
+  <div class="workspace app-shell topology-collapsed">
+    <aside class="app-navigation" aria-label="Workspace navigation">
+      <div class="navigation-heading"><span class="nav-icon" aria-hidden="true">M</span><span class="nav-label"><b>Workspace</b><small>Agent Mesh</small></span></div>
+      <label class="navigation-search"><span class="sr-only">Find a page</span><input id="navigation-search" type="search" placeholder="Search or go to…" aria-label="Find a page" autocomplete="off"></label>
+      <nav id="message-tabs" class="page-navigation" aria-label="Pages"></nav>
+      <div class="navigation-footer"><button id="navigation-help" type="button" aria-label="Help"><span class="nav-icon" aria-hidden="true">?</span><span class="nav-label">Help</span></button><button id="navigation-toggle" type="button" aria-expanded="true" aria-controls="message-tabs" title="Collapse sidebar"><span class="nav-icon" aria-hidden="true">⇤</span><span class="nav-label">Collapse sidebar</span></button></div>
+    </aside>
     <aside class="topology-panel" aria-label="Membership topology">
-      <header class="pane-heading"><b>Membership topology</b><button id="topology-toggle" aria-expanded="true" aria-controls="topology-body" title="Collapse topology">‹</button></header>
-      <div id="topology-body"><div class="topology-tools"><b>Expandable project map</b><div role="group" aria-label="Topology groups"><button id="topology-expand-all" type="button" title="Expand all groups">Expand all</button><button id="topology-collapse-all" type="button" title="Collapse all groups">Collapse all</button></div><button id="topology-overview" type="button" title="Show all projects" hidden>← All projects</button><div role="group" aria-label="Topology zoom"><button id="topology-zoom-in" type="button" title="Zoom in" aria-label="Zoom in topology">+</button><button id="topology-fit" type="button" title="Fit all nodes" aria-pressed="true">Fit</button><button id="topology-zoom-out" type="button" title="Zoom out" aria-label="Zoom out topology">−</button></div></div><p id="topology-system-label" class="topology-system-label" hidden></p><label class="topology-search"><span class="sr-only">Search topology</span><input id="topology-search" type="search" placeholder="Find an agent or channel…" aria-label="Search topology and highlight connections" autocomplete="off"></label><p id="topology-mode-hint" class="topology-mode-hint">Drag empty space to pan · scroll to zoom</p><div id="topology-canvas" tabindex="0" aria-label="Expandable project and agent map. Double-click a parent to show or hide its descendants. Right-click or Shift+F10 for type-specific actions. Left and Right Arrow collapse and expand. Drag to pan, scroll to zoom."></div><div class="topology-legend"><span class="working">Working</span><span class="idle">Idle</span><span class="offline">Offline</span><span class="project-legend">Project hub</span><span class="channel-legend">Channel hub</span><span class="edge-legend">Solid link: active channel · dashed: joined only · blue: parent lineage</span></div></div>
+      <header class="pane-heading"><b>Project topology</b><button id="topology-expand-view" type="button" aria-pressed="false" title="Expand topology across workspace" aria-label="Expand topology across workspace">⛶</button><button id="topology-toggle" aria-expanded="false" aria-controls="topology-body" title="Expand topology" aria-label="Toggle right topology panel">◉</button></header>
+      <div id="topology-body"><div class="topology-tools"><b>Expandable project map</b><div role="group" aria-label="Topology groups"><button id="topology-expand-all" type="button" title="Expand all groups">Expand all</button><button id="topology-collapse-all" type="button" title="Collapse all groups">Collapse all</button></div><button id="topology-overview" type="button" title="Show all projects" hidden>← All projects</button><div role="group" aria-label="Topology zoom"><button id="topology-zoom-in" type="button" title="Zoom in" aria-label="Zoom in topology">+</button><button id="topology-fit" type="button" title="Fit all nodes" aria-pressed="true">Fit</button><button id="topology-zoom-out" type="button" title="Zoom out" aria-label="Zoom out topology">−</button></div></div><p id="topology-system-label" class="topology-system-label" hidden></p><label class="topology-search"><span class="sr-only">Search topology</span><input id="topology-search" type="search" placeholder="Find an agent or channel…" aria-label="Search topology and highlight connections" autocomplete="off"></label><p id="topology-mode-hint" class="topology-mode-hint">Drag empty space to pan · scroll to zoom</p><div id="topology-canvas" tabindex="0" aria-label="Expandable project and agent map. Double-click a parent to show or hide its descendants. Right-click or Shift+F10 for type-specific actions. Left and Right Arrow collapse and expand. Drag to pan, scroll to zoom."></div><div class="topology-legend"><span class="working">Working</span><span class="idle">Idle</span><span class="offline">Offline</span><span class="project-legend">Project aggregate</span><span class="channel-legend">Channel aggregate</span><span class="edge-legend">Agent fill: role · status dot: Working / Idle / Offline · dashed: aggregate or joined link · gold: selected branch</span></div></div>
     </aside>
     <div id="topology-resizer" role="separator" tabindex="0" aria-label="Resize topology panel" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="700" aria-valuenow="340"></div>
-    <aside class="context" id="explorer-panel">
+    <aside class="context" id="explorer-panel" role="region" aria-label="Channels and participants" hidden>
       <section class="context-panel channel-panel">
         <div class="section-title first"><span>Channels</span><span id="thread-count">0</span></div>
         <div id="threads" class="threads"></div>
@@ -48,8 +54,8 @@
     </aside>
 
     <main class="message-workspace">
-      <div id="message-tabs" class="tabbar" role="tablist" aria-label="Workspace tabs"></div>
-      <section id="kanban-panel" class="kanban-panel" role="tabpanel" aria-label="Project Kanban">
+      <header class="page-heading"><span id="page-breadcrumb" class="muted">Workspace</span><h1 id="page-title">Project Kanban</h1></header>
+      <section id="kanban-panel" class="kanban-panel" role="region" aria-label="Project Kanban">
         <header class="kanban-heading"><h2>Project Kanban</h2><label>Project<select id="kanban-project"><option value="">Choose a project…</option></select></label></header>
         <p class="muted">Refine Backlog → To Do. Approved agents claim tasks exclusively → In Progress → Testing → Done with evidence. Blocked tasks keep their lane; independent work continues. Board entries do not authorize execution.</p>
         <output id="kanban-status" role="status" aria-live="polite"></output><div id="kanban-lanes" class="kanban-lanes"></div>
@@ -59,8 +65,8 @@
         </section>
         <form id="kanban-create" class="kanban-create" hidden><h3>Add to Backlog</h3><label>Title<input id="kanban-new-title" maxlength="300" required></label><label>Description / acceptance criteria<textarea id="kanban-new-description" maxlength="12000" rows="2"></textarea></label><button type="submit">Create task</button></form>
       </section>
-      <section id="matrix-panel" class="matrix-panel" role="tabpanel" aria-label="Membership matrix" hidden></section>
-      <section id="fleet-panel" class="fleet-panel" role="tabpanel" aria-label="Work fleet" hidden>
+      <section id="matrix-panel" class="matrix-panel" role="region" aria-label="Membership matrix" hidden></section>
+      <section id="fleet-panel" class="fleet-panel" role="region" aria-label="Work fleet" hidden>
         <h2>Work fleet</h2><p>Approved detached workflows. Use /mesh jobs in Pi to launch, resume, merge or manage missions.</p>
         <label>Project <select id="fleet-project"><option value="">All projects</option></select></label>
         <output id="fleet-status" role="status"></output><div id="fleet-runs"></div>
@@ -70,7 +76,7 @@
           <pre id="fleet-evidence"></pre>
         </section>
       </section>
-      <section id="usage-panel" class="usage-panel" role="tabpanel" aria-label="Daily agent usage" hidden>
+      <section id="usage-panel" class="usage-panel" role="region" aria-label="Daily agent usage" hidden>
         <h2>Daily agent usage</h2>
         <form id="usage-form" class="usage-filters">
           <label>Period<select id="usage-mode"><option value="day">Single date</option><option value="range">Date range (inclusive)</option></select></label>
@@ -85,7 +91,7 @@
         <output id="usage-status" role="status" aria-live="polite"></output>
         <div id="usage-results"></div>
       </section>
-      <section id="agent-config-panel" class="agent-config-panel" role="tabpanel" aria-label="Configure selected agent" hidden>
+      <section id="agent-config-panel" class="agent-config-panel" role="region" aria-label="Configure selected agent" hidden>
         <h2 id="agent-config-title">Configure agent</h2><p id="agent-config-info" class="muted"></p>
         <label>Target agent<select id="agent-config-target" aria-label="Target agent"></select></label>
         <form id="agent-config-form"><label>Provider<select id="agent-config-provider" aria-label="Provider"></select></label><label>Model (exact provider/model ID)<input id="agent-config-model" type="text" list="agent-config-models" maxlength="300" autocomplete="off" placeholder="provider/model-id" required></label><datalist id="agent-config-models"></datalist>
@@ -95,19 +101,14 @@
           <button class="send" type="submit">Request configuration</button><output id="agent-config-status" role="status"></output>
         </form><p class="muted">Changes are applied by the target Pi session when idle. This does not change defaults for new sessions or an approved running child job.</p>
       </section>
-      <div id="timeline-main" class="timeline-main" role="tabpanel" aria-label="Messages">
+      <div id="timeline-main" class="timeline-main" role="region" aria-label="Messages">
         <section id="messages" class="messages" aria-live="polite"></section>
         <div class="latest"><span id="latest-label">No messages yet</span><div class="worker-summary"><span id="worker-status" role="status">Checking child agents...</span><button id="worker-fleet" type="button">Work fleet</button></div></div>
       </div>
     </main>
 
-    <aside class="intervention">
-      <div class="inspector-heading"><button id="inspector-toggle" type="button" aria-expanded="true" aria-controls="inspector-body" title="Collapse right panel">›</button><span>Inspector</span></div>
-      <div id="inspector-body"><div id="inspector-tabs" class="tabbar" role="tablist" aria-label="Inspector tabs">
-        <button id="explorer-tab" role="tab" aria-selected="true" aria-controls="explorer-panel" data-inspector="explorer-panel">Explorer</button>
-        <button id="controls-tab" role="tab" aria-selected="false" aria-controls="controls-panel" data-inspector="controls-panel" tabindex="-1">Intervene &amp; manage</button>
-      </div>
-      <div id="controls-panel" role="tabpanel" aria-labelledby="controls-tab" hidden>
+    <aside class="intervention" hidden>
+      <div id="controls-panel" role="region" aria-label="Intervene and manage" hidden>
       <section class="compose mesh-controls" aria-labelledby="mesh-controls-title">
         <div class="compose-head"><b id="mesh-controls-title">Mesh controls</b><span>runtime policy</span></div>
         <div class="project-control">
@@ -138,7 +139,7 @@
         <output id="membership-status" role="status"></output>
       </form>
       <datalist id="channel-options"></datalist>
-      </div></div>
+      </div>
     </aside>
   </div>
   <footer class="statusbar"><span>Pi Agent Mesh · Local coordination</span><a href="https://github.com/vcsoc" target="_blank" rel="noopener noreferrer">Developed by Chris Visser</a><span id="filter-status">All messages</span></footer>
