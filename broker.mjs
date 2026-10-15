@@ -5,11 +5,12 @@ import { PolicyDrafts } from './security/draft-store.mjs';
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listRuns, readRun, enqueueControl, controlReceipt } from './fleet-store.mjs';
-import { runEvents } from './fleet.mjs';
+import { runEvents, canonicalProject } from './fleet.mjs';
+import { TaskBoard, TASK_COLUMNS } from './task-board.mjs';
 import { canonicalRole, roleName, allocateName } from './naming.mjs';
 import { UsageStore } from './usage.mjs';
 
-const VERSION = "2.7.7";
+const VERSION = "2.8.0";
 const MAX_BODY = 64 * 1024;
 const MAX_MESSAGE = 20_000;
 const MAX_CHANNEL = 64;
@@ -339,6 +340,15 @@ const securityDrafts = new PolicyDrafts(join(dataDir, 'security-drafts'));
 const securityScopes = () => [{id:'',label:'Mesh default — draft only'}, ...[...new Map(Object.values(agents).map(agent => [agent.projectHash, {id:agent.projectHash,label:`${agent.projectName} · ${agent.cwd}`}])).values()].filter(item => item.id)];
 const subscribers = new Set();
 const usageStore = new UsageStore();
+const taskBoard=new TaskBoard(dataDir);
+function boardScope(input){
+ const agent=input.agentId?requireOperationalAgent(clean(input.agentId,'agentId',160)):null;
+ const hash=cleanProjectHash(input.projectHash||agent?.projectHash);
+ if(agent&&agent.projectHash!==hash)throw Object.assign(Error('Task belongs to another project'),{status:403});
+ const registered=Object.values(agents).find(a=>a.projectHash===hash);if(!registered)throw Object.assign(Error('Unknown project'),{status:404});
+ return{project:existsSync(registered.cwd)?canonicalProject(registered.cwd):resolve(registered.cwd),actor:agent?.id||'user',agent};
+}
+function publicBoard(board){return{...board,columns:TASK_COLUMNS,tasks:board.tasks.map(({lease,...task})=>task)}}
 const displayPresence = agent => {if(!agent)return '';const {lastSeenAt,lastAck,registeredAt,...display}=publicAgent(agent);return JSON.stringify(display)};
 const server = createServer(async (request, response) => {
 	try {
@@ -357,6 +367,9 @@ const server = createServer(async (request, response) => {
         const topologyAssets={'/topology-layout.mjs':'topology-layout.mjs','/topology-model.mjs':'topology-model.mjs','/topology-structured.mjs':'topology-structured.mjs','/topology-renderer.mjs':'topology-renderer.mjs','/vendor/sigma-graphology.mjs':'vendor/sigma-graphology.mjs'};
         if (method === 'GET' && Object.hasOwn(topologyAssets,url.pathname)) return asset(response,topologyAssets[url.pathname],'text/javascript; charset=utf-8');
 		if (method === 'GET' && url.pathname === '/fleet-panel.js') return asset(response,'fleet-panel.js','text/javascript; charset=utf-8');
+		if (method === 'GET' && url.pathname === '/kanban-panel.js') return asset(response,'kanban-panel.js','text/javascript; charset=utf-8');
+		if (method === 'GET' && url.pathname === '/kanban.css') return asset(response,'kanban.css','text/css; charset=utf-8');
+		if (method === 'GET' && url.pathname === '/api/tasks') {const {project}=boardScope(Object.fromEntries(url.searchParams));return json(response,200,publicBoard(taskBoard.read(project)));}
 		if (method === 'GET' && url.pathname === '/usage-panel.js') return asset(response,'usage-panel.js','text/javascript; charset=utf-8');
 		if (method === 'GET' && url.pathname === '/orchestration') return asset(response,'ORCHESTRATION.md','text/plain; charset=utf-8');
 		if (method === "GET" && url.pathname === "/help") return asset(response, "help.html", "text/html; charset=utf-8");
@@ -387,9 +400,19 @@ const server = createServer(async (request, response) => {
 		const presenceOnly=['/api/heartbeat','/api/ack'].includes(url.pathname),presenceBefore=presenceOnly?displayPresence(agents[input.agentId]):null;
         response.once('finish', () => { if (response.statusCode < 400 && (!presenceOnly || presenceBefore!==displayPresence(agents[input.agentId]))) for (const stream of subscribers) { if (!stream.write('data: changed\n\n')) stream.destroy(); } });
 		if (url.pathname === '/api/fleet/control') {
-			try { return json(response, 202, enqueueControl(dataDir,input.id,input.action,input.message)); }
+			try { return json(response, 202, enqueueControl(dataDir,input.id,input.action,input.message,{taskId:input.taskId,decision:input.decision})); }
 			catch (cause) { return error(response,400,'INVALID_FLEET_CONTROL',cause.message); }
 		}
+		if(url.pathname==='/api/tasks'){
+         const {project,actor,agent}=boardScope(input);
+         if(agent&&['create','refine','ready','answer','escalate'].includes(input.action)&&agent.role!=='orchestrator')return error(response,403,'TASK_ROLE','Only this project orchestrator or user can refine tasks or decide blockers');
+         if(!['create','refine','ready','comment','answer','escalate'].includes(input.action))return error(response,400,'TASK_ACTION','Execution transitions belong to the approved runner');
+         const owner=taskBoard.read(project).tasks.find(t=>t.id===input.id)?.owner,target=owner&&agents[owner];
+         if(agent&&target&&agent.id!==target.id&&!sharesChannel(agent,target))return error(response,403,'NO_SHARED_CHANNEL','Task coordination requires the same active channel');
+         if(input.action==='create')taskBoard.create(project,{title:input.title,description:input.description,profile:input.profile},actor);
+         else taskBoard.update(project,input.id,input.version,actor,{action:input.action,message:input.message,title:input.title,description:input.description,profile:input.profile});
+         return json(response,200,publicBoard(taskBoard.read(project)));
+        }
 		if (url.pathname === "/api/policy/global") {
 			if (typeof input.enabled !== "boolean") throw Object.assign(new Error("enabled must be boolean"), { status: 400, code: "INVALID_INPUT" });
 			policy.enabled = input.enabled; persistPolicy();

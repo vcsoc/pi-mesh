@@ -67,6 +67,8 @@ try:
     assert not (agent / 'crashes.json').exists(), 'Pi recorded a crash'
     print('PASS: compiled Pi review renders exact colors, resizes, and closes all three actions; no workers/provider calls')
 finally:
+    # Closing the PTY first prevents an exiting session-leader wait cycle on Darwin.
+    os.close(master)
     try:
         os.kill(pid, signal.SIGTERM)
         time.sleep(0.2)
@@ -76,5 +78,4 @@ finally:
             os.waitpid(pid, 0)
     except (ProcessLookupError, ChildProcessError):
         pass
-    os.close(master)
     shutil.rmtree(home)

@@ -32,7 +32,7 @@ try{
   if(files[path])return route.fulfill({body:(await readFile(resolve(root,files[path]),'utf8'))+(path==='/dashboard.js'?'\nwindow.refresh=refresh;Object.defineProperty(window,"polling",{configurable:true,get:()=>polling});':''),contentType:path.endsWith('.css')?'text/css':/\.(js|mjs)$/.test(path)?'text/javascript':'text/html'});
   return route.fulfill({status:404,body:''});
  });
- await page.goto('http://mesh.test');await page.waitForSelector('.message[data-message-id="1000"]');
+ await page.goto('http://mesh.test');await page.locator('[data-view="all"]').click();if(await page.locator('#inspector-toggle').getAttribute('aria-expanded')==='false')await page.locator('#inspector-toggle').click();await page.waitForSelector('.message[data-message-id="1000"]');
  for(let i=0;i<3;i++)await page.locator('#load-older').click();
  await page.waitForFunction(()=>document.querySelectorAll('.message').length===1000);
  await page.locator('#auto-scroll').uncheck();
@@ -72,9 +72,9 @@ try{
   await page.locator('.person[data-agent="a0"] input').click({force:true});await page.waitForFunction(()=>{const input=document.querySelector('.person[data-agent="a0"] input');return input.checked&&!input.disabled});
   await page.locator('#mesh-enabled').click({force:true});await page.waitForFunction(()=>{const input=document.querySelector('#mesh-enabled');return !input.checked&&!input.disabled});
   // Layout callbacks must not erase persisted orbital scope before the first state response arrives.
-  await page.evaluate(()=>{localStorage.setItem('mesh-topology-mode','orbital');localStorage.setItem('mesh-orbit-system','project-0');localStorage.setItem('mesh-orbit-paused','true')});delay=200;await page.reload();await page.waitForSelector('[data-node="channel:project-0"].sun');assert.equal(await page.locator('#topology-layout').inputValue(),'orbital');delay=0;
+  await page.evaluate(()=>{localStorage.setItem('mesh-topology-mode','orbital');localStorage.setItem('mesh-orbit-system','project-0');localStorage.setItem('mesh-orbit-paused','true')});delay=200;await page.reload();await page.waitForSelector('[data-node="channel:project-0"]');assert.equal(await page.locator('#topology-layout').count(),0,'obsolete orbital preferences cannot resurrect removed views');delay=0;
  }
  assert.deepEqual(errors,[]);assert.deepEqual(posts,baseline?[]:['/api/agents/toggle','/api/policy/global'],'only intentional denied fixture controls are submitted; no running broker is contacted');
  console.log(JSON.stringify({heartbeat,newMessage:added,maxInflight,stateRequests,fleetRequests}));
- console.log('PASS: loaded-history performance, heartbeat stability, incremental messages, alias scope, live status/membership/policy'+(baseline?' (baseline measurement).':', SSE coalescing, hidden-tab throttling, foreground recovery, selection/navigation and slow-load persisted orbital scope and denied-control recovery.'));
+ console.log('PASS: loaded-history performance, heartbeat stability, incremental messages, alias scope, live status/membership/policy'+(baseline?' (baseline measurement).':', SSE coalescing, hidden-tab throttling, foreground recovery, selection/navigation and slow-load obsolete-preference migration and denied-control recovery.'));
 }finally{await browser.close()}

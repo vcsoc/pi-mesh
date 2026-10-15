@@ -3,7 +3,7 @@ const terminal=new Set(['completed','failed','cancelled','interrupted']);
 const compact=value=>plain(value).replace(/\s+/g,' ').slice(0,32);
 export function runStatusText(run,extra=0){
  const step=(run.steps||[]).find(s=>s.state==='running')||(run.steps||[]).at(-1);
- const states={starting:'STARTING',queued:'QUEUED',scheduled:'SCHEDULED',running:'RUNNING',paused:'PAUSED',completed:'FINISHED · see results',failed:'FAILED · inspect error',cancelled:'CANCELLED',interrupted:'INTERRUPTED · inspect before resuming'};
+ const states={starting:'STARTING',queued:'QUEUED',scheduled:'SCHEDULED',running:'RUNNING',paused:'PAUSED',waiting:'NEEDS DECISION · project Kanban',completed:'FINISHED · see results',failed:'FAILED · inspect error',cancelled:'CANCELLED',interrupted:'INTERRUPTED · inspect before resuming'};
  const tokens=Number.isFinite(run.usage?.tokens)?run.usage.tokens:0;
  const cost=Number.isFinite(run.usage?.cost)?`~$${run.usage.cost.toFixed(3)}`:'cost unknown';
  const activity=run.state==='running'&&['working','thinking','waiting'].includes(step?.activity)?`/${step.activity}`:'';

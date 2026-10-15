@@ -25,6 +25,7 @@ try {
  page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
  await page.route('http://mesh.test/**',async route=>{
   const pathname=new URL(route.request().url()).pathname;
+  if(pathname==='/api/tasks')return route.fulfill({json:{tasks:[],revision:0}});
   if(pathname==='/api/state')return route.fulfill({json:state});
   if(pathname==='/api/fleet')return route.fulfill({json:{runs:[fleetRun]}});
   if(pathname==='/api/fleet/run')return route.fulfill({json:{run:fleetRun,events:'fixture event'}});
@@ -36,7 +37,7 @@ try {
   if(files[pathname])return route.fulfill({body:await readFile(new URL('../'+files[pathname],import.meta.url)),contentType:pathname.endsWith('.css')?'text/css':(pathname.endsWith('.js')||pathname.endsWith('.mjs'))?'text/javascript':'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"}});
   return route.fulfill({status:404,body:''});
  });
- await page.goto('http://mesh.test');await page.waitForSelector('.topology-node');
+ await page.goto('http://mesh.test');await page.waitForSelector('.topology-node');await page.locator('[data-view="all"]').click();if(await page.locator('#inspector-toggle').getAttribute('aria-expanded')==='false')await page.locator('#inspector-toggle').click();
  assert.equal(await page.locator('.message').count(),8);
  assert.equal(await page.locator('#mesh-controls .section-toggle').getAttribute('aria-expanded'),'false');
  assert.equal(await page.locator('#membership .section-toggle').getAttribute('aria-expanded'),'false');
@@ -50,8 +51,8 @@ try {
  await page.locator('#topology-canvas').evaluate(node=>{node.dispatchEvent(new Event('gesturestart',{cancelable:true}));const event=new Event('gesturechange',{cancelable:true});Object.defineProperty(event,'scale',{value:1.25});node.dispatchEvent(event);node.dispatchEvent(new Event('gestureend',{cancelable:true}))});
  assert.ok(await cameraRatio()<originalGraph,'Safari gesture handler zooms');await page.locator('#topology-fit').click();
  assert.ok(await page.locator('.topology-node').evaluateAll(nodes=>new Set(nodes.map(n=>n.style.left)).size)>2,'graph is spatial, not two columns');
- await page.locator('#topology-layout').selectOption('orbital');assert.equal(await page.locator('#topology-layout').inputValue(),'spatial','orbital requires an explicit channel');
- await page.locator('[data-node="channel:backend"]').click({button:'right'});await page.getByRole('menuitem',{name:'Show system'}).click();await page.waitForTimeout(300);assert.equal(await page.locator('.topology-node.sun').count(),1,JSON.stringify({errors,mode:await page.locator('#topology-layout').inputValue(),nodes:await page.locator('.topology-node').evaluateAll(ns=>ns.map(n=>n.dataset.node))}));assert.equal(await page.locator('.topology-node.planet').count(),2);assert.equal(await page.locator('[data-node="channel:general"]').count(),0);assert.equal(await page.locator('#topology-system-label').textContent(),'Solar system · #backend · 2 agents');assert.equal(await page.locator('.topology-edge.active-membership,.topology-edge.inactive-membership').count(),2,'system includes active and secondary memberships');await page.locator('.thread-row').filter({hasText:'#general'}).click({button:'right'});await page.getByRole('menuitem',{name:'Show system'}).click();await page.waitForFunction(()=>document.querySelector('#topology-system-label')?.textContent.includes('#general'));assert.equal(await page.locator('.topology-node.planet').count(),3);assert.equal(await page.locator('[data-node="channel:backend"]').count(),0);await page.locator('.thread-row').filter({hasText:'#backend'}).click({button:'right'});await page.getByRole('menuitem',{name:'Show system'}).click();await page.waitForFunction(()=>document.querySelector('#topology-system-label')?.textContent.includes('#backend'));await page.locator('#topology-overview').click();assert.equal(await page.locator('.topology-node.sun').count(),0);assert.equal(await page.locator('.topology-node').count(),6,'overview restores all agent/channel/project nodes');await page.locator('#topology-layout').selectOption('structured');await page.locator('[data-node="channel:general"]').click({button:'right'});await page.getByRole('menuitem',{name:'Show system'}).click();await page.waitForSelector('.topology-node.sun');await page.locator('#topology-overview').click();assert.equal(await page.locator('#topology-layout').inputValue(),'structured','overview returns to the previous layout');await page.locator('#topology-layout').selectOption('spatial');
+ assert.equal(await page.locator('#topology-layout').count(),0,'only the circular project map remains');
+ await page.locator('.project-node').dblclick();await page.waitForSelector('#kanban-panel:not([hidden])');assert.equal(await page.locator('.topology-node[data-kind="agent"]').count(),3);await page.locator('#topology-overview').click();await page.locator('[data-view="all"]').click();
  await page.locator('[data-node="agent:a0"]').click({button:'right'});assert.ok(await page.getByRole('menuitem',{name:'Send user intervention…'}).isVisible());
  await page.getByRole('menuitem',{name:'Configure Cubed…'}).click();await page.waitForSelector('#agent-config-panel:not([hidden])');assert.equal(await page.locator('#agent-config-model').inputValue(),'sample-provider/first');
  assert.equal(await page.locator('[data-view="config"]').count(),1);await page.screenshot({path:'/tmp/mesh-config-form.png'});await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'agent form does not overflow mobile view');await page.setViewportSize({width:1440,height:900});await page.getByRole('button',{name:'Close agent configuration tab'}).click();assert.equal(await page.locator('[data-view="config"]').count(),0);
@@ -62,7 +63,7 @@ try {
  await page.getByRole('button',{name:'Close #backend tab (keep channel)',exact:true}).click();
  assert.equal(await page.locator('[data-view="channel:backend"]').count(),0);assert.ok(await page.locator('[data-node="channel:backend"]').isVisible());
  await page.waitForTimeout(1700);assert.equal(await page.locator('[data-view="channel:backend"]').count(),0,'closed tab stays closed on refresh');
- assert.equal(await page.locator('#message-tabs button').first().textContent(),'Membership matrix');
+ assert.equal(await page.locator('#message-tabs button').first().textContent(),'Project Kanban');
  await page.locator('[data-view="fleet"]').click();await page.waitForSelector('[data-run]');
  assert.equal(await page.locator('#fleet-panel').isVisible(),true);await page.locator('[data-run]').click();await page.waitForSelector('#fleet-detail:not([hidden])');
  assert.match(await page.locator('#fleet-evidence').textContent(),/fixture event/);assert.equal(await page.locator('#fleet-evidence script').count(),0);
@@ -113,9 +114,9 @@ try {
  assert.equal(await page.locator('.topology-edge.active-membership[data-agent="a1"]').getAttribute('data-channel'),'general');
  await page.screenshot({path:'/tmp/mesh-matrix-fixture.png'});
  await page.locator('[data-view="all"]').click();
- await page.locator('[data-node="channel:backend"]').click({button:'right'});await page.getByRole('menuitem',{name:'Show system'}).click();await page.waitForSelector('.topology-node.sun');
+ await page.locator('[data-node="channel:backend"]').click({button:'right'});await page.getByRole('menuitem',{name:'Show system'}).click();await page.waitForSelector('#topology-overview:not([hidden])');
  await page.locator('[data-node="channel:backend"]').click();state.channels=state.channels.filter(c=>c.name!=='backend');state.agents.forEach(a=>{a.channels=['general'];a.activeChannel='general'});
- await page.waitForTimeout(1700);assert.equal(await page.locator('[data-view="channel:backend"]').count(),0);assert.equal(await page.locator('.message').count(),8);assert.equal(await page.locator('#topology-layout').inputValue(),'spatial','removed system returns to overview');
+ await page.waitForTimeout(1700);assert.equal(await page.locator('[data-view="channel:backend"]').count(),0);assert.equal(await page.locator('.message').count(),8);assert.equal(await page.locator('#topology-layout').count(),0);await page.locator('#topology-overview').click();
  for(const [width,height] of [[1440,900],[1024,768],[768,800],[390,844]]){
   await page.setViewportSize({width,height});
   const geometry=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth>innerWidth,footer:document.querySelector('.statusbar').getBoundingClientRect().bottom,height:innerHeight}));
@@ -125,16 +126,12 @@ try {
  for(let i=3;i<25;i++)state.agents.push({...state.agents[0],id:`a${i}`,name:`Agent ${i}`,status:'idle'});
  state.agents[0].status='working';state.agents[0].activity='thinking';
  await page.waitForTimeout(1700);
- await page.locator('.thread-row').filter({hasText:'#general'}).click({button:'right'});await page.getByRole('menuitem',{name:'Show system'}).click();await page.waitForSelector('.topology-node.sun');assert.equal(await page.locator('.topology-node.sun').count(),1);assert.equal(await page.locator('.topology-node.planet').count(),25,'secondary channel members are planets too');assert.equal(await page.locator('[data-node="channel:backend"]').count(),0);await page.locator('#topology-overview').click();
+ await page.locator('.project-node').dblclick();assert.equal(await page.locator('.topology-node[data-kind="agent"]').count(),25);assert.equal(await page.locator('[data-node="channel:backend"]').count(),0);await page.locator('#topology-overview').click();
  const labelsDoNotOverlap=()=>page.locator('.topology-node b').evaluateAll(labels=>labels.every((node,i)=>labels.every((other,j)=>{if(i>=j)return true;const a=node.getBoundingClientRect(),b=other.getBoundingClientRect();return a.right<=b.left+.5||b.right<=a.left+.5||a.bottom<=b.top+.5||b.bottom<=a.top+.5})));
- for(const mode of ['spatial','structured','orbital']){await page.locator('#topology-layout').selectOption(mode);assert.equal(await labelsDoNotOverlap(),true,`${mode} labels must not overlap`);assert.equal(await page.locator('.topology-node').count(),mode==='orbital'?26:state.agents.length+state.channels.length+await page.locator('.project-node').count())}
- assert.ok(await page.locator('.topology-graph .sun').count());assert.ok(await page.locator('.topology-graph .planet').count());assert.ok(Number(await page.locator('.sigma-topology').getAttribute('data-orbits'))>0);
- const animatedStart=await page.locator('[data-node="agent:a0"]').evaluate(n=>n.style.left);await page.waitForTimeout(360);assert.notEqual(await page.locator('[data-node="agent:a0"]').evaluate(n=>n.style.left),animatedStart,'planets animate around their suns');
- await page.emulateMedia({reducedMotion:'reduce'});const reducedPosition=await page.locator('[data-node="agent:a0"]').evaluate(n=>n.style.left);await page.waitForTimeout(320);assert.equal(await page.locator('[data-node="agent:a0"]').evaluate(n=>n.style.left),reducedPosition,'reduced motion pauses orbit');await page.emulateMedia({reducedMotion:'no-preference'});
- await page.locator('#topology-orbit-toggle').click();assert.equal(await page.locator('#topology-orbit-toggle').getAttribute('aria-pressed'),'false');assert.equal(await labelsDoNotOverlap(),true,'animated orbital layout remains collision-free');
- const beforeOrbit=await page.locator('[data-node="agent:a0"]').evaluate(n=>n.style.left);await page.locator('#topology-canvas').focus();await page.keyboard.press('ArrowRight');assert.notEqual(await page.locator('[data-node="agent:a0"]').evaluate(n=>n.style.left),beforeOrbit,'keyboard rotates orbital view');
+ assert.equal(await labelsDoNotOverlap(),true,'circular project labels must not overlap');assert.equal(await page.locator('.topology-node').count(),state.agents.length+state.channels.length+await page.locator('.project-node').count());
+ const stationary=await page.locator('[data-node="agent:a0"]').evaluate(n=>n.style.left);await page.waitForTimeout(360);assert.equal(await page.locator('[data-node="agent:a0"]').evaluate(n=>n.style.left),stationary,'no orbital animation');
  await page.locator('#topology-search').fill('Scout');assert.equal(await page.locator('[data-node="agent:a2"].search-match').count(),1);assert.equal(await page.locator('[data-node="channel:general"].search-connected').count(),1);assert.ok(await page.locator('.topology-node.faded').count());await page.locator('#topology-search').fill('');await page.screenshot({path:'/tmp/mesh-orbital.png'});
- await page.locator('#topology-layout').selectOption('spatial');await page.locator('[data-view="matrix"]').click();
+ await page.locator('[data-view="matrix"]').click();
  assert.equal(await page.locator('tr[data-agent="a0"] .matrix-status').textContent(),'Thinking');
  const beforeZoom=await cameraRatio();
  await page.locator('#topology-zoom-in').click();assert.ok(await cameraRatio()<beforeZoom);
@@ -182,10 +179,10 @@ try {
  await page.locator('[data-node="channel:user"]').click({button:'right'});assert.equal(await page.getByRole('menuitem',{name:'Close #user…'}).count(),0);await page.keyboard.press('Escape');
  for(let i=25;i<110;i++)state.agents.push({...state.agents[0],id:`a${i}`,name:`Agent ${i}`,status:'idle'});
  for(let i=0;i<3;i++){const name=`system-${i}`;state.channels.push({name,memberCount:0,memberNames:[]});for(let j=i*25;j<(i+1)*25;j++){state.agents[j].channels=[name];state.agents[j].activeChannel=name}};
- await page.waitForTimeout(1700);await page.locator('[data-node="channel:system-1"]').click({button:'right'});await page.getByRole('menuitem',{name:'Show system'}).click();await page.waitForFunction(()=>document.querySelector('#topology-system-label')?.textContent.includes('#system-1'));assert.equal(await page.locator('.topology-node.planet').count(),25);await page.locator('#topology-overview').click();for(const mode of ['spatial','structured','orbital']){await page.locator('#topology-layout').selectOption(mode);assert.equal(await labelsDoNotOverlap(),true,`${mode} must remain collision-free with 110 agents`);if(mode==='orbital'){assert.equal(await page.locator('.topology-node.sun').count(),1);assert.equal(await page.locator('.topology-node.planet').count(),25);assert.equal(await page.locator('[data-node="channel:user"]').count(),0)}}
- await page.reload();await page.waitForSelector('[data-node="channel:system-1"].sun');assert.equal(await page.locator('.topology-node.planet').count(),25,'the selected system survives dashboard refresh');assert.equal(await page.locator('[data-node="channel:user"]').count(),0);
+ await page.waitForTimeout(1700);assert.equal(await labelsDoNotOverlap(),true,'circular layout remains collision-free with110 agents');
+ await page.reload();await page.waitForSelector('[data-node="channel:system-1"]');assert.equal(await page.locator('.topology-node[data-kind="agent"]').count(),110);
+ await page.locator('[data-view="all"]').click();
  // Representative busy dashboard: separated projects and no idle-poll DOM churn.
- await page.locator('#topology-layout').selectOption('spatial');
  state.agents=Array.from({length:65},(_,i)=>({id:i%6===0?`orc-${Math.floor(i/6)}`:`job-fixture-${i}`,name:i%6===0?`Project ${Math.floor(i/6)} orchestrator`:`Worker ${i}`,role:i%6===0?'orchestrator':'reviewer',parentAgentId:i%6===0?null:`orc-${Math.floor(i/6)}`,runId:i%6===0?null:'fixture',projectHash:`project-${Math.floor(i/6)}`,projectName:`Project ${Math.floor(i/6)}`,cwd:`/fixture/${Math.floor(i/6)}`,channels:[`project-${Math.floor(i/6)}`],activeChannel:`project-${Math.floor(i/6)}`,status:'working',enabled:true}));
  state.channels=Array.from({length:11},(_,i)=>({name:`project-${i}`,memberCount:6,memberNames:[]}));
  state.messages=Array.from({length:217},(_,i)=>({...messages[0],id:1000+i,content:`Fixture ${i} / ${'Long transcript text. '.repeat(30)}`,scopeChannel:'project-0'}));state.totalMessages=state.messages.length;
@@ -207,5 +204,5 @@ try {
  await page.locator('[data-view="all"]').click();await page.screenshot({path:'/tmp/mesh-project-neighbourhoods.png',fullPage:true});
  console.log(`Performance: ${interactionMs.toFixed(1)}ms selection; heartbeat refresh preserves DOM`);
  assert.deepEqual(errors,[]);
- console.log('PASS: 110-node overviews, single-channel solar systems via both context menus, inactive member planets, system switching/removal/refresh, nonoverlap, orbit navigation/search, config tab, panel shortcuts, tutorial, responsive layout and only explicit mutations.');
+ console.log('PASS: circular110-agent overview and project drilldown, live membership/removal, nonoverlap, pan/zoom/search, config tab, panel shortcuts, tutorial, responsive layout and only explicit mutations.');
 } finally { await browser.close(); }

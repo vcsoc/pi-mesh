@@ -19,10 +19,10 @@ test('demo validates exact count and preserves existing spawn/stage/concurrency 
  for(const count of [1,3,8,22,64]){
   assert.equal(demoCount(String(count)),count);const request=demoWorkRequest(count),plan=compile(count);
   assert.equal(request.background,true);assert.equal(plan.demoCount,count);assert.equal(plan.maxCalls,count);
-  assert.equal(plan.concurrency,Math.min(4,count));assert(plan.stages.length<=16);
-  assert(plan.stages.every(s=>s.parallel&&s.retries===0&&s.tasks.length<=8));
+  assert.equal(plan.concurrency,count);assert(plan.stages.length<=16);
+  assert(plan.stages.every(s=>s.parallel&&s.retries===0&&s.tasks.length<=64));
   const tasks=plan.stages.flatMap(s=>s.tasks);assert.equal(tasks.length,count);assert.equal(new Set(tasks.map(t=>t.id)).size,count);
-  assert.equal(plan.maxCost,Math.max(1,count*.25));assert.equal(plan.maxTokens,null);assert.equal(plan.timeoutMs,60000);
+  assert.equal(plan.maxCost,Math.max(1,count*.25));assert.equal(plan.maxTokens,null);assert.equal(plan.timeoutMs,15000);
   assert.equal(plan.context,'fresh');assert.equal(plan.isolation,'shared');assert.equal(plan.untilComplete,false);assert.equal(plan.watchdog,false);assert.equal(plan.schedule,null);
   for(const task of tasks){assert.equal(task.model,'fixture/demo');assert.equal(task.write,false);assert.deepEqual(task.tools,[]);assert.deepEqual(task.extensions,[]);assert.deepEqual(task.extensionTools,[]);assert.doesNotMatch(task.prompt,/UNSAFE/);assert.equal(task.acceptance.length,1);}
  }
@@ -31,7 +31,7 @@ test('demo validates exact count and preserves existing spawn/stage/concurrency 
 
 test('reserved demo scope refuses mutable permissions, tasks, gates, models, budgets and continuation',()=>{
  const original=demoWorkRequest(22).definition;
- for(const mutate of [d=>d.stages[0].tasks[0].task='Read secrets',d=>d.stages[0].tasks[0].profile='worker',d=>d.stages[0].tasks[0].model='fixture/other',d=>d.stages[0].tasks[0].extensions=['danger'],d=>d.stages[0].tasks[0].acceptance[0].equals.result=0,d=>d.stages[0].tasks[0].acceptance=[{type:'command',command:'touch',args:['unsafe']}],d=>d.stages[0].retries=1,d=>d.concurrency=22,d=>d.maxCost=null,d=>d.untilComplete=true,d=>d.watchdog=true,d=>d.context='fork',d=>d.schedule={at:'tomorrow'},d=>d.extra='unexpected',d=>d.demoCount=3]){
+ for(const mutate of [d=>d.stages[0].tasks[0].task='Read secrets',d=>d.stages[0].tasks[0].profile='worker',d=>d.stages[0].tasks[0].model='fixture/other',d=>d.stages[0].tasks[0].extensions=['danger'],d=>d.stages[0].tasks[0].acceptance[0].equals.result=0,d=>d.stages[0].tasks[0].acceptance=[{type:'command',command:'touch',args:['unsafe']}],d=>d.stages[0].retries=1,d=>d.concurrency=4,d=>d.maxCost=null,d=>d.untilComplete=true,d=>d.watchdog=true,d=>d.context='fork',d=>d.schedule={at:'tomorrow'},d=>d.extra='unexpected',d=>d.demoCount=3]){
   const modified=structuredClone(original);mutate(modified);assert.throws(()=>compileScopedWorkflow(modified,profiles,options),/Demo scope is fixed/);
  }
  assert.deepEqual(original,demoWorkRequest(22).definition);assert.equal(profiles.scout.write,true);
@@ -46,11 +46,11 @@ test('all tiny tasks require strict matching JSON; wrong result, task, status or
  }
 });
 
-test('review accurately discloses no workspace tools, real usage and22 total/four concurrent',()=>{
+test('review accurately discloses no workspace tools, real usage and22 concurrent children',()=>{
  const plan=compile(22),summary={project:'/fixture',scope:'demo',isolation:plan.isolation,context:plan.context,background:true,limits:{concurrency:plan.concurrency,spawns:plan.maxCalls,tokens:plan.maxTokens,estimatedCost:plan.maxCost,childDeadlineMs:plan.timeoutMs},steps:plan.stages.map(s=>({...s,tasks:s.tasks.map(t=>({...t,role:t.profile}))}))};
  const review=workflowReviewLines(summary).join('\n'),brief=workflowSummaryLines(summary).join('\n');
- assert.match(review,/DEMO \/ SMOKE TEST/);assert.match(review,/real model usage/);assert.match(review,/Tools: \(none\)/);assert.match(review,/child spawns: 22 \| concurrency: 4/);assert.match(review,/Estimated-cost ceiling: \$5.5/);assert.doesNotMatch(review,/workers may edit/);
- assert.match(brief,/22 workers, up to 4 at once/);assert.doesNotMatch(brief,/edits your current files/);
+ assert.match(review,/DEMO \/ SMOKE TEST/);assert.match(review,/real model usage/);assert.match(review,/Tools: \(none\)/);assert.match(review,/child spawns: 22 \| concurrency: 22/);assert.match(review,/Estimated-cost ceiling: \$5.5/);assert.doesNotMatch(review,/workers may edit/);
+ assert.match(brief,/22 workers, up to 22 at once/);assert.doesNotMatch(brief,/edits your current files/);
 });
 
 function prepare(t,count){
@@ -72,7 +72,7 @@ function fakeFactory({bad=false}={}){
 test('real supervisor completes exactly22/64 synthetic children, bounds concurrency and reports every result without project work',async t=>{
  for(const count of [22,64]){
   const f=prepare(t,count),fake=fakeFactory(),finished=await supervise(f.run,{factory:fake.factory});
-  assert.equal(finished.state,'completed');assert.equal(finished.calls,count);assert.equal(finished.steps.length,count);assert(fake.peak()<=4);assert.equal(fake.calls.length,count);
+  assert.equal(finished.state,'completed');assert.equal(finished.calls,count);assert.equal(finished.steps.length,count);assert(fake.peak()<=count);assert(fake.peak()>4);assert.equal(fake.calls.length,count);
   assert.deepEqual(finished.workspaces,[]);assert.equal(readFileSync(join(f.directory,'sentinel.txt'),'utf8'),'unchanged');assert.equal(runVerification(finished,f.spec).verified,true);
   const report=demoReport(finished,f.spec);assert.match(report,/^Mesh demo .*: PASS/);assert.match(report,new RegExp(`accepted: ${count}/${count}`));
   for(const item of demoCases(count))assert.match(report,new RegExp(item.id+' ·'));
@@ -83,8 +83,15 @@ test('real supervisor completes exactly22/64 synthetic children, bounds concurre
  }
 });
 
+test('modern demo acceptance requires elapsed evidence within15s; immutable historical60s grants retain their contract',()=>{
+ const item=demoCases(1)[0],row={id:item.id,state:'completed',elapsedMs:2,output:JSON.stringify({task:item.id,result:item.expected,status:'done'}),acceptance:[{passed:true}]},run={id:'fixture',state:'completed',steps:[row]},spec={plan:{demoCount:1,failurePolicy:'escalate',timeoutMs:15000}};
+ assert.match(demoReport(run,spec),/: PASS/);row.elapsedMs=16000;assert.match(demoReport(run,spec),/NOT VERIFIED/);delete row.elapsedMs;assert.match(demoReport(run,spec),/NOT VERIFIED/);row.elapsedMs=16000;delete spec.plan.failurePolicy;spec.plan.timeoutMs=60000;assert.match(demoReport(run,spec),/: PASS/);assert.match(demoReport(run,spec),/60 seconds runtime \(legacy grant\)/);
+});
 test('wrong synthetic result fails without retries; unstarted agents and partial evidence are reported honestly',async t=>{
- const f=prepare(t,22),fake=fakeFactory({bad:true}),finished=await supervise(f.run,{factory:fake.factory});
- assert.equal(finished.state,'failed');assert.equal(finished.steps.length,4);assert.equal(fake.calls.length,4);assert.equal(runVerification(finished,f.spec).verified,false);
- const report=demoReport(finished,f.spec);assert.match(report,/NOT VERIFIED \/ INCOMPLETE/);assert.match(report,/demo-001 .*failed.*FAIL.*result=999/);assert.match(report,/demo-022 .*not started.*FAIL/);
+ const f=prepare(t,22),fake=fakeFactory({bad:true});
+ // Old immutable grants keep their fail-fast settlement policy; new grants are covered by project-flow tests.
+ delete f.spec.plan.failurePolicy;atomicJSON(join(f.run,'spec.json'),f.spec);
+ const finished=await supervise(f.run,{factory:fake.factory});
+ assert.equal(finished.state,'failed');assert.equal(finished.steps.length,22);assert.equal(fake.calls.length,22);assert.equal(runVerification(finished,f.spec).verified,false);
+ const report=demoReport(finished,f.spec);assert.match(report,/NOT VERIFIED \/ INCOMPLETE/);assert.match(report,/demo-001 .*failed.*FAIL.*result=999/);assert.match(report,/demo-022 .*completed.*PASS/);
 });

@@ -40,14 +40,15 @@ export function listRuns(directory,project) {
  const root=join(directory,'runs');if(!existsSync(root))return [];
  return readdirSync(root).flatMap(id=>{try{const run=readRun(directory,id,true);return !project||run.project===project?[run]:[]}catch{return []}}).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
 }
-export function enqueueControl(directory,id,action,message='') {
- if(!['stop','steer','pause','continue'].includes(action))throw new Error('Unsupported fleet control');
+export function enqueueControl(directory,id,action,message='',decision={}) {
+ if(!['stop','steer','pause','continue','decide'].includes(action))throw new Error('Unsupported fleet control');
  const state=readRun(directory,id);
  if(terminal.has(state.state))throw new Error('Runner is not live; resume requires a new approved run');
  if(action==='steer'&&(typeof message!=='string'||!message.trim()||message.length>12000))throw new Error('Steering requires 1–12000 characters');
+ if(action==='decide'&&(!/^[a-z][a-z0-9_-]{0,47}$/.test(decision.taskId||'')||!['retry','escalate'].includes(decision.decision)||typeof message!=='string'||message.length>12000||decision.decision==='retry'&&!message.trim()))throw Error('Task decision requires taskId, retry/escalate and a directive for retry');
  const receipt=randomUUID(),folder=join(runDirectory(directory,id),'controls');mkdirSync(folder,{recursive:true,mode:0o700});
  if(readdirSync(folder).length>=128)throw new Error('Runner control queue is full');
- atomicJSON(join(folder,`${receipt}.json`),{id:receipt,action,message,createdAt:Date.now()});
+ atomicJSON(join(folder,`${receipt}.json`),{id:receipt,action,message,...(action==='decide'?{taskId:decision.taskId,decision:decision.decision}:{}),createdAt:Date.now()});
  return {id:receipt,runId:id,state:'queued'};
 }
 export function controlReceipt(directory,id,receipt) {

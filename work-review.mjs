@@ -66,6 +66,7 @@ export function workflowReviewLines(summary) {
       : `Estimated-cost ceiling: $${limits.estimatedCost} (provider-reported costs may be incomplete)`,
     `Tokens: ${limits.tokens==null?'AUDIT ONLY — no token ceiling':limits.tokens} | child spawns: ${limits.spawns} | concurrency: ${limits.concurrency}`,
     `Child timeout: ${limits.childDeadlineMs} ms`,
+    'Task blockers: orchestrator decision, then user escalation. Independent ready work continues. No implicit retry; permissions/budget increases require new approval.',
   );
   if (limits.costApprovalBase)
     lines.push(`Prior approved cost baseline: ${limits.costApprovalBase}`);
@@ -83,7 +84,7 @@ export function workflowReviewLines(summary) {
   );
   if (continuous)
     lines.push(
-      "Automatic continuation, compaction and acceptance repair continue until gates pass or you stop; repeated failures pause for input.",
+      "Automatic runtime checkpoints and compaction retain the active session. Failed acceptance requires a task decision, not blind repair/replay. Historical immutable grants retain their old policy.",
     );
   for (const [index, stage] of (summary.steps || []).entries()) {
     lines.push(
@@ -98,6 +99,9 @@ export function workflowReviewLines(summary) {
       lines.push(
         `Worker: ${task.id} | role: ${task.role} | lane: ${task.lane}`,
         `Exact model: ${task.model}`,
+        ...(task.boardTaskId?[`Bound Kanban card: ${task.boardTaskId}`]:[]),
+        ...(task.previousBoardTaskId?[`Resume creates a new card; previous card retained: ${task.previousBoardTaskId}`]:[]),
+        `Dependencies: ${task.dependsOn===undefined?'previous stage / sequence':task.dependsOn.length?task.dependsOn.join(', '):'none — independent'}`,
         `Profile write permission: ${task.write === true ? "yes" : task.write === false ? "no" : "unspecified"}`,
         `Tools: ${task.tools?.join(", ") || "(none)"}`,
         `Extensions: ${task.extensions?.length ? task.extensions.map((e) => (typeof e === "string" ? e : `${e.name || e.entry || e.path} [${e.sha256 || e.hash || e.digest || "see manifest"}]`)).join(", ") : "(none)"}`,

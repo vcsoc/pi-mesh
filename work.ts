@@ -1,6 +1,6 @@
 import { getAgentDir, getPackageDir, type ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import { StringEnum } from '@earendil-works/pi-ai';
+import { StringEnum, getSupportedThinkingLevels } from '@earendil-works/pi-ai';
 import { Text } from '@earendil-works/pi-tui';
 import { workflowSummaryLines, workflowReviewLines } from './work-review.mjs';
 import { existsSync } from 'node:fs';
@@ -14,6 +14,8 @@ import { quickWorkRequest } from './quick-work.mjs';
 import { teamWorkRequest } from './team-work.mjs';
 import { demoWorkRequest, demoReport, DEMO_USAGE, DEMO_SYSTEM_PROMPT } from './demo-work.mjs';
 import { reviewWork } from './work-tui.ts';
+import { readProjectConfig } from './project-config.mjs';
+import { TaskBoard } from './task-board.mjs';
 import { simpleTeam, simpleProposal } from './simple-team.ts';
 import { compileScopedWorkflow } from './team-scope.mjs';
 import { createRunStatus } from './run-status.mjs';
@@ -49,12 +51,12 @@ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, avail
    await approve(ctx,'Update Mesh mission?',JSON.stringify(params.definition||{}),signal);
    return updateMission(directory,project,params.definition||{});
   }
-  if(['inspect','wait','stop','steer','pause','continue','receipt'].includes(action)) {
+  if(['inspect','wait','stop','steer','pause','continue','receipt','decide'].includes(action)) {
    own(params.id);
    if(action==='inspect'){const run=own(params.id),spec=readJSON(join(runDirectory(directory,params.id),'spec.json'));return {run,verification:runVerification(run,spec),events:runEvents(directory,params.id)};}
    if(action==='receipt')return controlReceipt(directory,params.id,params.receipt);
    if(action==='wait'){const run=await waitRun(directory,params.id,{signal,timeoutMs:params.waitMs??30000});return {...run,verification:runVerification(run,readJSON(join(runDirectory(directory,params.id),'spec.json')))};}
-   return enqueueControl(directory,params.id,action,params.message);
+   return enqueueControl(directory,params.id,action,params.message,{taskId:params.taskId,decision:params.decision});
   }
   if(['merge','cleanup'].includes(action)) {
    const run=own(params.id);if(ownsLiveProcess(run))throw new Error('Finish or stop the run first');
@@ -92,14 +94,20 @@ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, avail
     if(!availableModels.includes(t.model)||t.tools.some((tool:string)=>!toolCeiling(pi.getActiveTools()).has(tool)))throw new Error('Resume exceeds current model/tool availability');
    }
   } else {
+   if(definition.scope!=='demo')definition={...readProjectConfig(project).value.defaults,...definition};
    const plan=compileScopedWorkflow(definition,profiles(ctx),{activeTools:pi.getActiveTools(),currentModel,availableModels,agentDir:getAgentDir()});
-   spec={plan,cwd:ctx.cwd,project,projectHash:projectHash(project),systemPrompt:plan.scope==='demo'?DEMO_SYSTEM_PROMPT:ctx.getSystemPrompt(),thinkingLevel:ctx.thinkingLevel||pi.getThinkingLevel(),sdkFile:join(getPackageDir(),'dist','index.js'),agentDir:getAgentDir(),forkContext:plan.context==='fork'?forkContext(ctx.sessionManager.buildContextEntries()):'',missionId:params.missionId||definition.missionId};
+   const bound=new Set();
+   for(const task of plan.stages.flatMap(s=>s.tasks))if(task.boardTaskId){
+    const entry=new TaskBoard(directory).read(project).tasks.find(t=>t.id===task.boardTaskId);
+    if(bound.has(task.boardTaskId)||!entry||entry.column!=='To Do'||entry.owner||entry.runId||entry.description!==task.task||entry.profile!==task.profile)throw Error('Select an unclaimed To Do task with the exact board description/profile; duplicate bindings are forbidden');bound.add(task.boardTaskId);
+   }
+   spec={plan,cwd:ctx.cwd,project,projectHash:projectHash(project),systemPrompt:plan.scope==='demo'?DEMO_SYSTEM_PROMPT:ctx.getSystemPrompt(),thinkingLevel:plan.scope==='demo'?(getSupportedThinkingLevels(ctx.model).includes('off')?'off':getSupportedThinkingLevels(ctx.model)[0]):ctx.thinkingLevel||pi.getThinkingLevel(),sdkFile:join(getPackageDir(),'dist','index.js'),agentDir:getAgentDir(),forkContext:plan.context==='fork'?forkContext(ctx.sessionManager.buildContextEntries()):'',missionId:params.missionId||definition.missionId};
   }
   if(spec.plan.stages.some(s=>s.tasks.some(t=>t.acceptance.some(g=>g.type==='command')))&&!pi.getActiveTools().includes('bash'))throw new Error('Host command gates require the parent bash capability');
   if(spec.missionId&&!listMissions(directory,project).some(m=>m.id===spec.missionId&&m.status==='open'))throw new Error('Choose an open mission in this project');
   spec.parentId=ctx.sessionManager.getSessionId();spec.policyDirectory=directory;spec.mesh=connection();spec.gatewayMode=readGatewayConfig().mode;
   if(spec.plan.untilComplete&&spec.plan.tokenLimitMode&&spec.gatewayMode!=='routed')throw Error('Automatic continuation requires gateway routing for complete SDK request auditing. Configure /ai-gateway first; no work started.');
-  const summary={project,gateway:{mode:spec.gatewayMode,confinement:'unverified',audit:'metadata-default'},scope:spec.plan.scope||'custom',workingDirectory:spec.cwd,missionId:spec.missionId,planFingerprint:createHash('sha256').update(JSON.stringify(spec.plan)).digest('hex'),contextFingerprint:createHash('sha256').update(JSON.stringify([spec.systemPrompt,spec.forkContext||''])).digest('hex'),isolation:spec.plan.isolation,context:spec.plan.context,thinkingLevel:spec.thinkingLevel,background:params.background===true,schedule:spec.plan.schedule,continuation:{untilComplete:spec.plan.untilComplete===true,unlimitedSpending:spec.plan.maxCost===null,interventions:'cancel active operation, process first, then resume',failurePolicy:'pause after three failed acceptance passes'},limits:{concurrency:spec.plan.concurrency,spawns:spec.plan.maxCalls,tokens:spec.plan.maxTokens,tokenLimitMode:spec.plan.tokenLimitMode,estimatedCost:spec.plan.maxCost,costApprovalBase:spec.costApprovalBase||0,childDeadlineMs:spec.plan.timeoutMs},steps:spec.plan.stages.map(s=>({parallel:s.parallel,retries:s.retries,when:s.when,tasks:s.tasks.map(t=>({id:t.id,role:t.profile,lane:t.lane,model:t.model,write:t.write,tools:t.tools,extensions:t.extensions,extensionTools:t.extensionTools,task:t.task,prompt:t.prompt,acceptance:t.acceptance}))}))};
+  const summary={project,gateway:{mode:spec.gatewayMode,confinement:'unverified',audit:'metadata-default'},scope:spec.plan.scope||'custom',workingDirectory:spec.cwd,missionId:spec.missionId,planFingerprint:createHash('sha256').update(JSON.stringify(spec.plan)).digest('hex'),contextFingerprint:createHash('sha256').update(JSON.stringify([spec.systemPrompt,spec.forkContext||''])).digest('hex'),isolation:spec.plan.isolation,context:spec.plan.context,thinkingLevel:spec.thinkingLevel,background:params.background===true,schedule:spec.plan.schedule,continuation:{untilComplete:spec.plan.untilComplete===true,unlimitedSpending:spec.plan.maxCost===null,interventions:'cancel active operation, process first, then resume',failurePolicy:spec.plan.failurePolicy==='escalate'?'task blockers escalate to the orchestrator, then user; independent ready work continues; no implicit retry':'legacy immutable grant: original stage settlement/retry policy retained'},limits:{concurrency:spec.plan.concurrency,spawns:spec.plan.maxCalls,tokens:spec.plan.maxTokens,tokenLimitMode:spec.plan.tokenLimitMode,estimatedCost:spec.plan.maxCost,costApprovalBase:spec.costApprovalBase||0,childDeadlineMs:spec.plan.timeoutMs},steps:spec.plan.stages.map(s=>({parallel:s.parallel,retries:s.retries,when:s.when,tasks:s.tasks.map(t=>({id:t.id,boardTaskId:t.boardTaskId,previousBoardTaskId:t.previousBoardTaskId,role:t.profile,dependsOn:t.dependsOn,lane:t.lane,model:t.model,write:t.write,tools:t.tools,extensions:t.extensions,extensionTools:t.extensionTools,task:t.task,prompt:t.prompt,acceptance:t.acceptance}))}))};
   if(action==='preview')return summary;
   spec.sdkFile=resolveSDKFile(getPackageDir(),getAgentDir());
   if(spec.plan.isolation==='worktree'&&spec.plan.stages.some(s=>s.tasks.some(t=>t.write&&!spec.resumeWorkspaces?.some(w=>w.lane===t.lane))))await preflightWorkspace(spec.cwd);
@@ -124,11 +132,11 @@ export function registerWork(pi: ExtensionAPI, getDirectory: () => string, avail
   try{const finished=await waitRun(directory,run.id,{signal,onUpdate:state=>ctx.ui.setWidget('mesh-jobs',[`${state.id.slice(0,8)} · ${state.state} · ${state.steps.length} steps · ${state.usage.tokens} tokens`])});return {...finished,verification:runVerification(finished,spec)};}
   finally{foreground.delete(run.id);ctx.ui.setWidget('mesh-jobs',undefined);}
  }
- const actions=['enable','context','profiles','models','workflows','preview','run','resume','list','inspect','wait','stop','steer','pause','continue','receipt','missions','mission','merge','cleanup'] as const;
+ const actions=['enable','context','profiles','models','workflows','preview','run','resume','list','inspect','wait','stop','steer','pause','continue','receipt','decide','missions','mission','merge','cleanup'] as const;
  pi.registerTool({name:'agent_mesh_work',label:'Mesh Work',description:'Explicitly approved durable Mesh workflows, profiles, schedules, missions and isolated worktrees. Preview before run. Background jobs survive Pi exit. Inspect/list/wait/stop/steer/pause/continue use a run id; control receipts distinguish queued from applied. See /mesh jobs help for the declarative definition format.',
   promptSnippet:'Run explicitly authorized Mesh workflows and inspect/control durable child jobs.',
   promptGuidelines:['Task complexity does not authorize delegation. Use profiles/workflows/preview without launching work. Every run/resume requires interactive user approval; no nested delegation. Report completed runtime separately from acceptance evidence.'],
-  parameters:Type.Object({action:StringEnum(actions),id:Type.Optional(Type.String()),role:Type.Optional(Type.String()),workflow:Type.Optional(Type.String()),definition:Type.Optional(Type.Any({description:'Declarative workflow: tasks[{id?,profile,task,lane?,model?,extensions?:[installed agent-dir path],extensionTools?:[approved tool names],acceptance?}], mode sequence/parallel; or stages[{tasks,parallel?,retries?,when?}]. Optional isolation worktree/shared, schedule{at,everyMs,maxRuns}, untilComplete (explicit automatic checkpoint continuation), watchdog, concurrency, timeoutMs, maxCalls, maxTokens, maxCost (null permits unlimited spending only with untilComplete), context fresh/fork.'})),tasks:Type.Optional(Type.Array(Type.Object({profile:Type.String(),task:Type.String()}))),mode:Type.Optional(StringEnum(['sequence','parallel'] as const)),background:Type.Optional(Type.Boolean()),missionId:Type.Optional(Type.String()),message:Type.Optional(Type.String()),receipt:Type.Optional(Type.String()),lane:Type.Optional(Type.String()),discard:Type.Optional(Type.Boolean()),waitMs:Type.Optional(Type.Integer({minimum:1,maximum:300000}))}),
+  parameters:Type.Object({action:StringEnum(actions),id:Type.Optional(Type.String()),role:Type.Optional(Type.String()),taskId:Type.Optional(Type.String()),decision:Type.Optional(StringEnum(['retry','escalate'] as const)),workflow:Type.Optional(Type.String()),definition:Type.Optional(Type.Any({description:'Declarative workflow: tasks[{id?,profile,task,lane?,model?,extensions?:[installed agent-dir path],extensionTools?:[approved tool names],acceptance?}], mode sequence/parallel; or stages[{tasks,parallel?,retries?,when?}]. Optional isolation worktree/shared, schedule{at,everyMs,maxRuns}, untilComplete (explicit automatic checkpoint continuation), watchdog, concurrency, timeoutMs, maxCalls, maxTokens, maxCost (null permits unlimited spending only with untilComplete), context fresh/fork.'})),tasks:Type.Optional(Type.Array(Type.Object({profile:Type.String(),task:Type.String()}))),mode:Type.Optional(StringEnum(['sequence','parallel'] as const)),background:Type.Optional(Type.Boolean()),missionId:Type.Optional(Type.String()),message:Type.Optional(Type.String()),receipt:Type.Optional(Type.String()),lane:Type.Optional(Type.String()),discard:Type.Optional(Type.Boolean()),waitMs:Type.Optional(Type.Integer({minimum:1,maximum:300000}))}),
   renderCall(params,theme){return new Text(theme.fg('toolTitle',`Mesh work: ${params.action}`),0,0);},
   renderResult(result,{expanded,isPartial},theme){
    if(isPartial)return new Text(theme.fg('muted','Preparing Mesh work...'),0,0);

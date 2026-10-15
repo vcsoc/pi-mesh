@@ -10,31 +10,35 @@ Requires Git and Pi 1.0.4 or newer (Node 22.19+). Run on **each machine**:
 pi install https://github.com/vcsoc/pi-mesh.git
 ```
 
-After current work finishes, run `/reload` in every open Pi session. For subsequent updates:
+After current work finishes, exit Pi normally and restart/resume in the same project (`pi --continue` or `pi --resume`). For subsequent updates:
 
 ```sh
 pi update https://github.com/vcsoc/pi-mesh.git
 ```
 
-Then `/reload` again. `pi list` shows the installed Git checkout. No manual copying, separate TypeScript build or npm publication is needed; Pi supplies its own SDK/TUI dependencies and compiles `index.ts` at load time. The package explicitly loads only that extension, not helper modules or tests.
+Then finish work and restart Pi normally (`pi --continue` or `pi --resume` in the same project). Native `.mjs` helpers can remain cached across `/reload`; a new entrypoint version alone does not prove every helper refreshed. `pi list` shows the installed Git checkout. No manual copying, separate TypeScript build or npm publication is needed; Pi supplies its own SDK/TUI dependencies and compiles `index.ts` at load time. The package explicitly loads only that extension, not helper modules or tests.
 
 **Migrating from the old manual installation:** back up `~/.pi/agent/extensions/agent-mesh` and move it **outside** `~/.pi/agent/extensions` after installing the Git package, before reloading. If settings explicitly point to that old folder, remove only that old extension entry. Finish active Mesh jobs before moving/restarting the broker. Do **not** move/delete `~/.pi/agent-mesh`: it contains your settings, history, credentials and approved runs. Install/update does not synchronize or replay that state. Existing broker processes may still be using the old path; perform a verified, quiescent restart rather than killing active work.
 
 Developers clone this repository separately, make changes here and push to `main`; machines update their Pi-managed Git checkout with the command above. Do not edit installed checkouts or reintroduce a runtime copy in `mypi`.
 
-## New in 2.7.7 — approved multi-agent smoke test
+## New in 2.8.0 — project workbench and dependency scheduling
 
-Use `/mesh demo 3` or `/mesh demo 22` to request **1–64 tiny in-memory agents**. Review the exact plan and explicitly Accept before anything launches; Cancel/Reject launches none. Four agents at most run concurrently, in bounded batches (22 means 22 total, not 22 simultaneous). They use your selected Pi provider/model and return strict JSON for arithmetic, string reversal or sorting. Demo scope ignores custom profile prompts/models/tools: workers have **no workspace tools or child extensions**, cannot delegate, and use minimal demo prompts (no parent conversation/project role memory) and fresh/shared sessions without retries, schedules or automatic continuation.
+New approvals no longer use four-agent batches: all ready tasks run within the approved spawn/concurrency budget, with dependency queuing, exclusive task/lane ownership and recoverable blockers. `/mesh config` edits project settings inline with Cancel/Save. The dashboard has one circular map with double-click project focus and a project Kanban board with live task comments. Demos have a15-second child deadline; stalled providers become decision blockers, never false PASS. See [Project work and decisions](PROJECT-WORK.md) for limits, escalation, approval boundaries and activation.
 
-The footer tracks the background run; a deterministic per-agent result report follows in the parent transcript. PASS requires all requested agents to finish with the expected values and passing JSON gates, not merely terminal runtime. Inspect with `/mesh jobs {"action":"inspect","id":"<run-id>"}`; stop with `/mesh stop <run-id>`. Real model usage, SDK sessions, normal Mesh logs and vault handoffs are recorded. Estimated-cost ceiling is `max($1, $0.25 × count)` ($5.50 for22), audit-only tokens, 60-second deadline per child; missing provider cost data is not a hard billing guarantee. There is no OS sandbox. Shared execution refuses overlap with other Mesh work in the project. This is different from `/mesh jobs review-demo`, which only displays sample UI and makes no model requests.
+## Approved multi-agent smoke test
 
-Activation is separate: publishing this release does not update installed packages, restart a broker or launch a demo. Update the Pi-managed Git package explicitly and activate only with an authorized, quiescent broker restart, preserving private state; reload open Pi sessions after current work.
+Use `/mesh demo 3` or `/mesh demo 22` to request **1–64 tiny in-memory agents**. Review the exact plan and explicitly Accept before anything launches; Cancel/Reject launches none. All requested agents are independent and eligible to start concurrently (22 means22 concurrent within the approved grant). They use your selected Pi provider/model and return strict JSON for arithmetic, string reversal or sorting. Demo scope ignores custom profile prompts/models/tools: workers have **no workspace tools or child extensions**, cannot delegate, and use minimal demo prompts (no parent conversation/project role memory) and fresh/shared sessions without retries, schedules or automatic continuation.
+
+The footer tracks the background run; a deterministic per-agent result report follows in the parent transcript. PASS requires all requested agents to finish with the expected values and passing JSON gates, not merely terminal runtime. Inspect with `/mesh jobs {"action":"inspect","id":"<run-id>"}`; stop with `/mesh stop <run-id>`. Real model usage, SDK sessions, normal Mesh logs and vault handoffs are recorded. Estimated-cost ceiling is `max($1, $0.25 × count)` ($5.50 for22), audit-only tokens,15-second deadline per child including setup; missing provider cost data is not a hard billing guarantee. There is no OS sandbox. Shared execution refuses overlap with other Mesh work in the project. This is different from `/mesh jobs review-demo`, which only displays sample UI and makes no model requests.
+
+Activation is separate: publishing this release does not update installed packages, restart a broker or launch a demo. Update the Pi-managed Git package explicitly and activate only with an authorized, quiescent broker restart, preserving private state; restart/resume open Pi sessions normally after current work.
 
 ## New in 2.7.6 — Sigma.js topology
 
-The topology now uses **[Sigma.js 4.0.2](https://github.com/jacomyal/sigma.js)** (WebGL2) and **Graphology 0.26.0**, not custom SVG drawing. Project hubs contain channel hubs; unique agent points are spaced on deterministic satellite rings around their joined active channel, or their project if no local channel applies. Extra memberships and registered parent/child links add edges, not duplicate agent points. Identically named projects remain separate by project hash/path. Structured overview also includes every project; scoped orbital view retains its channel and all recorded members.
+The topology now uses **[Sigma.js 4.0.2](https://github.com/jacomyal/sigma.js)** (WebGL2) and **Graphology 0.26.0**, not custom SVG drawing. Project hubs contain channel hubs; unique agent points are spaced on deterministic satellite rings around their joined active channel, or their project if no local channel applies. Extra memberships and registered parent/child links add edges, not duplicate agent points. Identically named projects remain separate by project hash/path. The current workbench uses one circular project map; structured/orbital selectors are retired.
 
-Click a project hub to focus its neighbourhood. Click an agent/channel to read its conversation; right-click for existing actions. Pan, mouse/trackpad/Safari zoom, Fit, search, live status/lineage, theme, workspace shortcuts and orbital controls are retained. Sigma draws the actual nodes, readable labels and solid/dashed relationships; safe HTML controls provide keyboard accessibility. Unavailable WebGL2 produces an explicit accessible-list fallback, never a fake Sigma graph. One renderer/context is updated incrementally; heartbeat-only refreshes do not reconstruct the graph or history.
+Double-click a project hub to show just its agents and Kanban. Click an agent/channel to read its conversation; right-click for existing actions. Pan, mouse/trackpad/Safari zoom, Fit, search, live status/lineage, theme, workspace shortcuts are retained. Sigma draws the actual nodes, readable labels and solid/dashed relationships; safe HTML controls provide keyboard accessibility. Unavailable WebGL2 produces an explicit accessible-list fallback, never a fake Sigma graph. One renderer/context is updated incrementally; heartbeat-only refreshes do not reconstruct the graph or history.
 
 Assets are self-hosted and authenticated under the existing CSP: no CDN, external graph service or runtime package build. The pinned browser bundle and license notices live in `vendor/`. Maintainers regenerate it with `npm ci --legacy-peer-deps --ignore-scripts && npm run build:topology`; host-provided Pi packages remain peers, never bundled. Layout/model/renderer sources are `topology-layout.mjs`, `topology-structured.mjs`, `topology-model.mjs` and `topology-renderer.mjs`.
 
@@ -149,7 +153,7 @@ Deployment preserves the existing Mesh home, broker credentials and run/message 
 ## New in 2.7.2
 
 - Configure a selected **existing Pi session's actual model and thinking level** with `/mesh configure <agent>` or the workspace Configure agent tab, opened from either agent context menu. The target session validates availability, exact model and supported thinking level, waits until idle, applies through Pi's own session API and acknowledges the result. A queued request is not proof of application. Active approved child jobs cannot be reconfigured; choose their model and thinking before launching.
-- Topology layout selector: collision-free spatial graph, structured channel/agent columns and animated 3D-style orbital projection with channel suns and orbiting agent planets. Drag to rotate, Shift-drag to pan, wheel/pinch to zoom, arrows on a focused canvas to rotate, double-click a sphere to focus; reduced-motion preferences pause orbital animation. Right-click a project/channel node or Explorer row and choose **Show system** to focus on its sun and all joined agents; **← Overview** returns to the previous spatial or structured layout. Search highlights matches and directly connected spheres while fading others.
+- One circular Sigma/WebGL2 map with project/channel hubs and agent rings. Double-click a project to show just its agents and project Kanban; **← All projects** restores the full map. Drag to pan, wheel/pinch to zoom, use Fit/search and accessible node controls. No structured/orbital selector or animation.
 - Close × is visually inside its own conversation tab. Collapse or expand the entire right inspector. Alt+T shows topology only, Alt+M messages only and Alt+R restores all three panels; visible toolbar buttons offer an alternative if a browser reserves a shortcut. The guided walkthrough now covers the new views and controls.
 
 ## New in 2.7.1
@@ -230,7 +234,7 @@ Other commands:
 /mesh version                      # loaded extension semantic version (e.g. Agent Mesh v2.7.4)
 /mesh doctor                       # read-only config/broker/session/fleet checks
 /mesh configure <agent>           # choose that online Pi session's model and thinking level
-/mesh demo 22                      # approve 22 no-tools smoke-test agents, up to4 concurrently
+/mesh demo 22                      # approve 22 no-tools smoke-test agents, all22 concurrently,15s deadline per child
 /mesh jobs review Check this diff. # approve a single reviewer before any launch
 /mesh jobs scout Find entry points. # approve a single scout before any launch
 /mesh agents
@@ -274,19 +278,20 @@ Only the unified `/mesh` command is registered. There are no legacy command alia
 ## Agent tools
 
 - `agent_mesh_send` — send to a same-active-channel peer, the active `#channel`, all peers active there, or `#user` for a reply visible only to the user dashboard.
+- `agent_mesh_tasks` — project Kanban metadata: create/refine tasks, inspect comments, answer blockers or escalate; board edits do not authorize execution.
 - `agent_mesh_work` — approved durable workflows, isolated parallel writers, profiles/models, schedules, missions, context, inspection, wait/stop/steer, resume, acceptance, integration and cleanup. Watchdog reviews are opt-in.
 - `agent_mesh_agents` — list only peers with the same active channel, including presence, projects, models, and memberships.
 - `agent_mesh_channels` — list, join, leave, or switch channels. Switch takes exactly one existing channel: `{"action":"switch","channels":["backend"]}`. Agents are instructed not to change the user's chosen channel unless explicitly requested.
 - `agent_mesh_history` — read active-channel messages and own direct/all messages stamped with that scope, plus own direct administrator interventions.
 
-Restrictive agents receive all four tools additively when addressed.
+Restrictive agents receive Mesh coordination tools additively when addressed.
 
 ## Dashboard
 
 The authenticated browser UI uses a full-viewport Workbench layout, dark by default, with a darker VS Code-inspired background. It provides:
 
 - a resizable, collapsible left Membership topology pane, a central tabbed workspace, and a right inspector with Explorer and Intervene & manage tabs;
-- topology channel nodes and agent nodes connected by current memberships; working agents have green backgrounds, idle agents orange, and offline agents grey (status is also labeled); spatial/structured layouts show all channels, while right-click **Show system** on a channel node or Explorer row opens a single channel sun with all its joined agent planets (active or inactive membership). Use **← Overview** to return to the previous overview layout; viewing a system does not change membership or the message filter;
+- circular project/channel hubs and unique agent nodes, connected by current memberships and recorded parent links; status is labeled and colored. Project double-click filters to that project's agents/Kanban; **← All projects** restores every project. Channel context focus selects its project without changing memberships;
 - node-driven transcript filtering: agent selection shows messages sent by or addressed to that agent, including immutable recipient snapshots; channel selection shows that channel's messages. Selecting the same topology node again clears the filter and returns to All messages;
 - channel tabs opened or activated from either the topology, Explorer, or matrix; an existing channel tab is reused rather than duplicated;
 - a pinned first Membership matrix tab showing current membership, with ★ marking each agent's active channel, plus clickable channel headings and agent names. Topology and Explorer also display the active channel. Dashboard filtering does **not** switch an agent's active channel;

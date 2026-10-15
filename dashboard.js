@@ -1,7 +1,6 @@
-import { neighbourhoodLayout } from './topology-layout.mjs';
+import { circularProjectLayout, projectIdentity } from './topology-layout.mjs';
 import { topologyModel } from './topology-model.mjs';
 import { TopologyRenderer } from './topology-renderer.mjs';
-import { structuredLayout } from './topology-structured.mjs';
 const $=id=>document.getElementById(id);
 const el={agents:$("agents"),agentCount:$("agent-count"),auto:$("auto-scroll"),connection:$("connection"),content:$("content"),fontDown:$("font-down"),fontLevel:$("font-level"),fontUp:$("font-up"),form:$("composer"),jump:$("jump-latest"),kind:$("kind"),latestLabel:$("latest-label"),loadOlder:$("load-older"),messages:$("messages"),status:$("composer-status"),theme:$("theme-toggle"),threadCount:$("thread-count"),threads:$("threads"),timeline:$("timeline-main"),to:$("to"),topMessageCount:$("top-message-count"),topThread:$("top-thread"),membership:$("membership"),memberAgent:$("member-agent"),memberChannel:$("member-channel"),channelOptions:$("channel-options"),joinChannel:$("join-channel"),leaveChannel:$("leave-channel"),removeAgent:$("remove-agent"),membershipStatus:$("membership-status"),contextMenu:$("context-menu"),meshEnabled:$("mesh-enabled"),meshStatus:$("mesh-status"),policyProject:$("policy-project"),projectHash:$("project-hash"),toggleProject:$("toggle-project"),kickAll:$("kick-all"),kickAllStatus:$("kick-all-status")};
 let agents=[],channels=[],messages=[],policy={enabled:true,blockedProjects:[],blockedProjectNames:{}},total=0,polling=false,refreshAgain=false,participantStatus="all",selectedParticipant="",selectedChannel="",selectedMessageId=0,lastVisibleMessageId=0;
@@ -86,14 +85,13 @@ async function refresh(){
   agents=state.agents.sort((a,b)=>a.name.localeCompare(b.name));policy=state.policy||{enabled:true,blockedProjects:[],blockedProjectNames:{}};
   if(selectedParticipant&&!agents.some(agent=>agent.id===selectedParticipant))selectedParticipant='';
   channels=(state.channels||[]).sort((a,b)=>a.name.localeCompare(b.name));updateChannelIndex();stateLoaded=true;
-  const canonicalSystem=channels.find(c=>sameChannel(c.name,orbitSystem));if(canonicalSystem&&orbitSystem!==canonicalSystem.name){orbitSystem=canonicalSystem.name;localStorage.setItem('mesh-orbit-system',orbitSystem)}
   total=state.totalMessages;const messagesChanged=merge(state.messages);
   const migrated=channels.find(c=>sameChannel(c.name,selectedChannel));if(migrated&&migrated.name!==selectedChannel){openChannels.delete(selectedChannel);selectedChannel=migrated.name;openChannels.add(selectedChannel);if(activeView.startsWith('channel:'))activeView='channel:'+selectedChannel;localStorage.setItem(channelKey,selectedChannel)}
   if(selectedChannel&&!channels.some(channel=>channel.name===selectedChannel)){selectedChannel='';localStorage.removeItem(channelKey)}
   const nextAgents=JSON.stringify(agents.map(({lastSeenAt,lastAck,registeredAt,...ui})=>ui)),nextChannels=JSON.stringify(channels),nextPolicy=JSON.stringify(policy);
   const agentsChanged=nextAgents!==agentUISignature,channelsChanged=nextChannels!==channelsUISignature,policyChanged=nextPolicy!==policyUISignature,selectionChanged=selectionBefore!==JSON.stringify([selectedParticipant,selectedChannel,activeView]);
   agentUISignature=nextAgents;channelsUISignature=nextChannels;policyUISignature=nextPolicy;
-  if(agentsChanged||channelsChanged){updateRecipientOptions();updateMembershipOptions()}
+  if(agentsChanged||channelsChanged){updateRecipientOptions();updateMembershipOptions();projectState()}
   if(agentsChanged||policyChanged)renderPolicyControls();
   if(agentsChanged||selectionChanged)renderAgents();
   if(agentsChanged)renderWorkerStatus();
@@ -116,36 +114,22 @@ document.addEventListener("keydown",event=>{if(event.key!=="ArrowLeft"&&event.ke
 el.loadOlder.addEventListener("click",async()=>{const oldest=messages[0]?.id;if(!oldest)return;try{const result=await request(`/api/messages?before=${oldest}&limit=250`);merge(result.messages);renderChannels();renderMessages()}catch(error){el.status.textContent=error.message}});
 // Workbench state stays independent from polling: selection and open tabs survive refreshes.
 const openChannels=new Set(selectedChannel?[selectedChannel]:[]);
-let activeView=selectedChannel?`channel:${selectedChannel}`:"all",configAgentId='',configCatalog=[],configCatalogGeneration=null,configLoadTicket=0;
+let activeView=selectedChannel?`channel:${selectedChannel}`:'kanban',configAgentId='',configCatalog=[],configCatalogGeneration=null,configLoadTicket=0;
 let topologySignature="",matrixSignature="",workbenchSignature='',fleetViewActive=false,usageViewActive=false;
 let topologyFit=true;
-let topologyMode=['spatial','structured','orbital'].includes(localStorage.getItem('mesh-topology-mode'))?localStorage.getItem('mesh-topology-mode'):'spatial',overviewMode='spatial',orbitSystem=localStorage.getItem('mesh-orbit-system')||'',orbitYaw=0,orbitTilt=.58,orbitPaused=localStorage.getItem('mesh-orbit-paused')==='true',topologyQuery='';
+let topologyQuery='',selectedProject='',topologyProject='';
+function projectState(){window.dispatchEvent(new CustomEvent('mesh-project-state',{detail:{projects:projects(),selectedProject}}))}
+function showProject(hash,drilldown=true){if(hash&&!projects().some(p=>p.hash===hash)){topologyFit=false;topologyView?.focusProject(hash);return}selectedProject=hash;if(!drilldown){projectState();return}topologyProject=hash;topologyFit=true;topologySignature='';updateTopologyModeUI();activateView('kanban');projectState();renderTopology()}
+window.addEventListener('mesh-project-select',event=>showProject(event.detail||''));
 let layoutCache={signature:'',positions:new Map()},topologyView;
-function topologyScope(){if(topologyMode!=='orbital')return {channels,agents};const channel=channels.find(c=>sameChannel(c.name,orbitSystem));return {channels:channel?[channel]:[],agents:channel?agents.filter(a=>a.channels.some(name=>sameChannel(name,channel.name))):[]}}
-function showSystem(name){const channel=channels.find(c=>sameChannel(c.name,name));if(!channel)return;if(topologyMode!=='orbital')overviewMode=topologyMode;orbitSystem=channel.name;topologyMode='orbital';localStorage.setItem('mesh-orbit-system',orbitSystem);localStorage.setItem('mesh-topology-mode',topologyMode);topologyFit=true;topologySignature='';updateTopologyModeUI();renderTopology()}
+function topologyScope(){if(!topologyProject)return {channels,agents};const members=agents.filter(a=>projectIdentity(a)===topologyProject),names=new Set(members.flatMap(a=>a.channels||[]).map(n=>channelKeyOf(n)));return{agents:members,channels:channels.filter(c=>!c.userOnly&&(c.projectHash===topologyProject||names.has(channelKeyOf(c.name)))).map(c=>({...c,projectHash:topologyProject}))}}
+function showSystem(name){const channel=channels.find(c=>sameChannel(c.name,name));const project=channel?.projectHash||agents.find(a=>a.channels.some(c=>sameChannel(c,name)))?.projectHash;if(project)showProject(project)}
 function topologyLayout(){
  const {channels,agents}=topologyScope();
  const ids=[...channels.map(c=>'channel:'+c.name),...agents.map(a=>'agent:'+a.id)],edges=[];
  for(const a of agents)for(const name of a.channels){const c=channels.find(c=>sameChannel(c.name,name));if(c)edges.push(['channel:'+c.name,'agent:'+a.id])}
- const signature=JSON.stringify([ids,edges,channels.map(c=>[c.projectHash,c.projectName,c.aliases,c.userOnly]),agents.map(a=>[a.role,a.parentAgentId,a.projectHash,a.cwd,a.projectName,a.activeChannel]),topologyMode,orbitSystem,topologyMode==='orbital'?[orbitYaw,orbitTilt]:null]);if(layoutCache.signature===signature)return layoutCache;
- if(topologyMode==='spatial')return layoutCache={signature,...neighbourhoodLayout(agents,channels)};
- if(topologyMode==='structured')return layoutCache={signature,...structuredLayout(agents,channels)};
- const size=Math.max(600,Math.ceil(Math.sqrt(ids.length)*165)),points=ids.map((id,i)=>({id,x:size/2+Math.cos(i*2.39996)*Math.sqrt((i+1)/Math.max(1,ids.length))*size*.34,y:size/2+Math.sin(i*2.39996)*Math.sqrt((i+1)/Math.max(1,ids.length))*size*.34,z:0})),map=new Map(points.map(p=>[p.id,p])),orbits=[];
- if(topologyMode==='orbital'){
-  const cols=Math.max(1,Math.ceil(Math.sqrt(channels.length))),cell=500;
-  channels.forEach((c,i)=>{const sun=map.get('channel:'+c.name);sun.x=250+(i%cols)*cell;sun.y=270+Math.floor(i/cols)*cell;sun.z=100;
-   const orbiters=agents.filter(a=>a.channels.some(name=>sameChannel(name,c.name)));
-   orbiters.forEach((a,j)=>{const ring=Math.floor(j/8),slots=Math.min(8,orbiters.length-ring*8),position=j%8,angle=orbitYaw+position*2*Math.PI/Math.max(1,slots)+ring*.38,radius=135+ring*82,planet=map.get('agent:'+a.id);planet.x=sun.x+Math.cos(angle)*radius;planet.y=sun.y+Math.sin(angle)*radius*orbitTilt;planet.z=Math.sin(angle)*radius*(1-orbitTilt)});
-   for(let ring=0;ring<Math.ceil(orbiters.length/8);ring++)orbits.push({sun:sun.id,radius:135+ring*82});
-  });
-
- }
- // Place label-sized rectangles without overlap, not merely the 20px node circles.
- const placed=[];for(const p of points){const x=p.x,y=p.y;let found=false;for(let ring=0;ring<Math.max(20,points.length*2)&&!found;ring++)for(let slot=0;slot<(ring?16:1);slot++){const angle=slot*2*Math.PI/16,cx=x+(ring?Math.cos(angle)*ring*58:0),cy=y+(ring?Math.sin(angle)*ring*58:0);if(placed.every(q=>Math.abs(q.x-cx)>=152||Math.abs(q.y-cy)>=60)){p.x=cx;p.y=cy;found=true;break}}if(!found){p.x=x+placed.length*160;p.y=y+placed.length*65}placed.push(p)}
- const minX=Math.min(...points.map(p=>p.x)),maxX=Math.max(...points.map(p=>p.x)),minY=Math.min(...points.map(p=>p.y)),maxY=Math.max(...points.map(p=>p.y));
- const width=Math.max(240,maxX-minX+200),height=Math.max(240,maxY-minY+170);
- for(const p of points){p.x+=100-minX;p.y+=85-minY}
- return layoutCache={signature,positions:map,width,height,orbits};
+ const signature=JSON.stringify([ids,edges,channels.map(c=>[c.projectHash,c.projectName,c.aliases,c.userOnly]),agents.map(a=>[a.role,a.parentAgentId,a.projectHash,a.cwd,a.projectName,a.activeChannel]),topologyProject]);if(layoutCache.signature===signature)return layoutCache;
+ return layoutCache={signature,...circularProjectLayout(agents,channels)};
 }
 function agentStatus(agent){if(agent.status==="offline")return "Offline";if(agent.effectiveEnabled===false)return "Disabled";return ({thinking:"Thinking",working:"Working",waiting:"Waiting on agent response",idle:"Idle"})[agent.activity||agent.status]||agent.status}
 function applyTopologyZoom(){if(!topologyView)return;topologyView.resize();if(topologyFit)topologyView.fit();$('topology-fit').setAttribute('aria-pressed',String(topologyFit));$('topology-fit').title='Fit all projects, channels and agents'}
@@ -184,28 +168,29 @@ $('agent-config-target').onchange=()=>openAgentConfig($('agent-config-target').v
 $('agent-settings-open').onclick=()=>{const id=selectedParticipant||agents.find(item=>item.configurable)?.id||agents[0]?.id;if(id)void openAgentConfig(id);else dashboardNotice('No registered agents to configure.');};
 $('agent-config-form').addEventListener('submit',async event=>{event.preventDefault();const agent=agents.find(a=>a.id===configAgentId),model=$('agent-config-model').value.trim(),thinkingLevel=$('agent-config-thinking').value,status=$('agent-config-status');if(!agent?.configurable||agent.generation!==configCatalogGeneration)return status.textContent='Agent/catalog is unavailable or stale. Reload it.';const advertised=configCatalog.find(item=>item.id===model);if(!advertised||thinkingLevel&&!advertised.levels.includes(thinkingLevel))return status.textContent='Select an exact advertised model and supported thinking level.';if(model===agent.model&&!thinkingLevel)return status.textContent='Choose a different model or thinking level.';if(!$('agent-config-reviewed').checked)return status.textContent='Review the selected target/model and check the confirmation box.';status.textContent='Sending request…';try{const result=await request('/api/agents/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agentId:agent.id,generation:configCatalogGeneration,...(model&&model!==agent.model?{model}:{}),...(thinkingLevel?{thinkingLevel}:{})})});status.textContent=`Request ${result.request.id} queued; waiting for the target Pi session. This is not yet applied.`;await refresh()}catch(error){status.textContent=error.message}});
 function activateView(view){
- if(view==="matrix"||view==="fleet"||view==='usage'||view==='config'&&configAgentId){activeView=view;renderWorkbench();return}
+ if(view==='kanban'||view==="matrix"||view==="fleet"||view==='usage'||view==='config'&&configAgentId){activeView=view;renderWorkbench();return}
  selectChannel(view.startsWith("channel:")?view.slice(8):"");
 }
 function renderWorkbench(){
  for(const name of openChannels)if(!channels.some(c=>c.name===name))openChannels.delete(name);
  if(activeView.startsWith("channel:")&&!openChannels.has(activeView.slice(8))){activeView="all";selectedChannel=""}
  const tabs=$("message-tabs"),focused=document.activeElement?.dataset.view;
- const views=[["matrix","Membership matrix"],["all","All messages"],["fleet","Work fleet"],["usage","Daily usage"],...(configAgentId?[["config",`Configure ${agents.find(a=>a.id===configAgentId)?.name||'agent'}`]]:[]),...[...openChannels].map(name=>[`channel:${name}`,`#${name}`])];
+ const views=[['kanban','Project Kanban'],["matrix","Membership matrix"],["all","All messages"],["fleet","Work fleet"],["usage","Daily usage"],...(configAgentId?[["config",`Configure ${agents.find(a=>a.id===configAgentId)?.name||'agent'}`]]:[]),...[...openChannels].map(name=>[`channel:${name}`,`#${name}`])];
  const signature=JSON.stringify([views,activeView]);if(signature!==workbenchSignature){workbenchSignature=signature;tabs.replaceChildren();
  for(const [view,label] of views){
   const button=make("button","workspace-tab",label);button.type="button";button.role="tab";button.dataset.view=view;
   button.id=`workspace-tab-${views.findIndex(item=>item[0]===view)}`;
   button.setAttribute("aria-selected",String(activeView===view));button.tabIndex=activeView===view?0:-1;
-  button.setAttribute("aria-controls",view==="matrix"?"matrix-panel":view==="fleet"?"fleet-panel":view==='usage'?'usage-panel':view==='config'?'agent-config-panel':"timeline-main");
+  button.setAttribute("aria-controls",view==='kanban'?'kanban-panel':view==="matrix"?"matrix-panel":view==="fleet"?"fleet-panel":view==='usage'?'usage-panel':view==='config'?'agent-config-panel':"timeline-main");
   if(view==="matrix")button.title="Pinned membership matrix";
   button.addEventListener("click",()=>activateView(view));
   if(view.startsWith('channel:')||view==='config'){const group=make('span','workspace-tab-group'),close=make('button','close-tab','×');close.type='button';close.title=view==='config'?'Close agent configuration tab':`Close ${label} tab (keep channel)`;close.setAttribute('aria-label',close.title);close.addEventListener('click',()=>{if(view==='config')configAgentId='';else openChannels.delete(view.slice(8));if(activeView===view)activateView('all');else renderWorkbench()});group.append(button,close);tabs.append(group)}else tabs.append(button);
-  if(activeView===view)$(view==="matrix"?"matrix-panel":view==="fleet"?"fleet-panel":view==='usage'?'usage-panel':view==='config'?'agent-config-panel':"timeline-main").setAttribute("aria-labelledby",button.id);
+  if(activeView===view)$(view==='kanban'?'kanban-panel':view==="matrix"?"matrix-panel":view==="fleet"?"fleet-panel":view==='usage'?'usage-panel':view==='config'?'agent-config-panel':"timeline-main").setAttribute("aria-labelledby",button.id);
  }
  if(focused)tabs.querySelectorAll("button").forEach(b=>{if(b.dataset.view===focused)b.focus({preventScroll:true})});
  }
- $("matrix-panel").hidden=activeView!=="matrix";el.timeline.hidden=activeView==="matrix"||activeView==="fleet"||activeView==='usage'||activeView==='config';
+ $('kanban-panel').hidden=activeView!=='kanban';if(activeView==='kanban'){projectState();window.dispatchEvent(new CustomEvent('mesh-kanban-view'));el.topThread.textContent='Project Kanban';el.topMessageCount.textContent='· task ownership, decisions and comments'}
+ $("matrix-panel").hidden=activeView!=="matrix";el.timeline.hidden=activeView==='kanban'||activeView==="matrix"||activeView==="fleet"||activeView==='usage'||activeView==='config';
  $("fleet-panel").hidden=activeView!=="fleet";$('agent-config-panel').hidden=activeView!=='config';if(activeView==='config')renderAgentConfig();if(fleetViewActive!==(activeView==='fleet')){fleetViewActive=activeView==='fleet';window.dispatchEvent(new CustomEvent('mesh-fleet-view',{detail:fleetViewActive}))}
  $('usage-panel').hidden=activeView!=='usage';if(usageViewActive!==(activeView==='usage')){usageViewActive=activeView==='usage';window.dispatchEvent(new CustomEvent('mesh-usage-view',{detail:usageViewActive}))}
  if(activeView==='usage'){el.topThread.textContent='Daily agent usage';el.topMessageCount.textContent='· dates, tokens, cache and estimated cost'}
@@ -218,17 +203,17 @@ function renderWorkbench(){
 }
 function topologyContext(node,event){
  if(!node)return;
- if(node.kind==='project'){showContextMenu(event,[{label:`Focus project ${node.label}`,action:()=>{topologyFit=false;topologyView.focusProject(node.project)}},{label:'Show full topology',action:()=>{topologyFit=true;applyTopologyZoom()}}]);return}
+ if(node.kind==='project'){showContextMenu(event,[{label:`Focus project ${node.label}`,action:()=>showProject(node.project)},{label:'Show full topology',action:()=>showProject('')}]);return}
  if(node.kind==='channel'){const c=channels.find(c=>c.name===node.channel);if(!c)return;showContextMenu(event,[{label:'Show system',action:()=>showSystem(c.name)},{label:'Open channel conversation',action:()=>selectChannel(c.name)},{label:'Inspect membership matrix',action:()=>activateView('matrix')},...(c.userOnly?[]:[{label:`Close #${c.name}…`,danger:true,action:()=>closeChannel(c.name)}])]);return}
  const a=agents.find(a=>a.id===node.agent);if(!a)return;showContextMenu(event,[{label:'View agent messages',action:()=>selectAgentNode(a.id,false)},{label:`Configure ${a.name}…`,action:()=>openAgentConfig(a.id)},{label:'Send user intervention…',action:()=>{el.to.value=a.id;el.to.dispatchEvent(new Event('change'));openSection('composer');$('controls-tab').click();el.content.focus()}},{label:a.enabled===false?'Enable agent':'Disable agent',action:()=>updatePolicy('/api/agents/toggle',{agentId:a.id,enabled:a.enabled===false},'Updating agent…','Agent updated.')},{label:'Disconnect agent',danger:true,action:()=>removeAgentFromMesh(a.id)}]);
 }
 function renderTopology(){
  if(!stateLoaded||document.hidden||$('topology-body').hidden||document.querySelector('.workspace').classList.contains('focus-messages'))return;
- if(topologyMode==='orbital'&&!topologyScope().channels.length){topologyMode='spatial';orbitSystem='';localStorage.setItem('mesh-topology-mode',topologyMode);localStorage.removeItem('mesh-orbit-system');updateTopologyModeUI()}
- const scope=topologyScope();if(topologyMode==='orbital')$('topology-system-label').textContent=`Solar system · #${orbitSystem} · ${scope.agents.length} agents`;
- const signature=JSON.stringify([scope.agents.map(a=>[a.id,a.name,a.model,a.role,a.parentAgentId,a.runId,a.projectHash,a.cwd,a.projectName,a.status,a.activity,a.enabled,a.effectiveEnabled,a.channels,a.activeChannel]),scope.channels.map(c=>[c.name,c.projectHash,c.projectName,c.aliases,c.userOnly,channelMessageCount(c.name)]),selectedParticipant,selectedChannel,activeView,topologyMode,orbitSystem,topologyQuery,orbitYaw,orbitTilt]);if(signature===topologySignature)return;topologySignature=signature;
- if(!topologyView)topologyView=new TopologyRenderer($('topology-canvas'),{context:topologyContext,cameraChanged:()=>{topologyFit=false;$('topology-fit').setAttribute('aria-pressed','false')},select:node=>{if(node.kind==='agent')selectAgentNode(node.agent);else selectChannel(selectedChannel===node.channel&&activeView!=='matrix'?'':node.channel)}});
- const layout=topologyLayout();topologyView.update(topologyModel(scope.agents,scope.channels,layout,{selectedAgent:activeView==='matrix'?'':selectedParticipant,selectedChannel:activeView==='matrix'?'':selectedChannel,query:topologyQuery,orbital:topologyMode==='orbital',channelCount:channelMessageCount}),{fit:topologyFit});
+ if(topologyProject&&!agents.some(a=>projectIdentity(a)===topologyProject)){topologyProject='';updateTopologyModeUI()}
+ const scope=topologyScope();
+ const signature=JSON.stringify([scope.agents.map(a=>[a.id,a.name,a.model,a.role,a.parentAgentId,a.runId,a.projectHash,a.cwd,a.projectName,a.status,a.activity,a.enabled,a.effectiveEnabled,a.channels,a.activeChannel]),scope.channels.map(c=>[c.name,c.projectHash,c.projectName,c.aliases,c.userOnly,channelMessageCount(c.name)]),selectedParticipant,selectedChannel,activeView,topologyProject,topologyQuery]);if(signature===topologySignature)return;topologySignature=signature;
+ if(!topologyView)topologyView=new TopologyRenderer($('topology-canvas'),{context:topologyContext,projectFocus:project=>showProject(project),cameraChanged:()=>{topologyFit=false;$('topology-fit').setAttribute('aria-pressed','false')},select:node=>{if(node.kind==='project')showProject(node.project,false);else if(node.kind==='agent')selectAgentNode(node.agent);else selectChannel(selectedChannel===node.channel&&activeView!=='matrix'?'':node.channel)}});
+ const layout=topologyLayout();topologyView.update(topologyModel(scope.agents,scope.channels,layout,{selectedAgent:activeView==='matrix'?'':selectedParticipant,selectedChannel:activeView==='matrix'?'':selectedChannel,query:topologyQuery,channelCount:channelMessageCount}),{fit:topologyFit});
 }
 function renderMatrix(){
  if(activeView!=='matrix')return;
@@ -293,25 +278,23 @@ function setInspectorCollapsed(collapsed,persist=true){workspace.classList.toggl
 function setFocusMode(mode,persist=true){focusMode=mode;workspace.classList.toggle('focus-topology',mode==='topology');workspace.classList.toggle('focus-messages',mode==='messages');if(mode==='topology'&&$('topology-toggle').getAttribute('aria-expanded')==='false')$('topology-toggle').click();if(mode==='normal'){if($('topology-toggle').getAttribute('aria-expanded')==='false')$('topology-toggle').click();setInspectorCollapsed(false,persist)}requestAnimationFrame(()=>{renderTopology();applyTopologyZoom()})}
 $('inspector-toggle').addEventListener('click',()=>setInspectorCollapsed(!workspace.classList.contains('inspector-collapsed')));
 $('view-topology').addEventListener('click',()=>setFocusMode('topology'));$('view-messages').addEventListener('click',()=>setFocusMode('messages'));$('view-reset').addEventListener('click',()=>setFocusMode('normal'));
-setInspectorCollapsed(localStorage.getItem('mesh-inspector-collapsed')==='true',false);
+setInspectorCollapsed(localStorage.getItem('mesh-inspector-collapsed')!=='false',false);
 document.addEventListener('keydown',event=>{if(!event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||!['t','m','r'].includes(event.key.toLowerCase())||document.querySelector('#mesh-tour')?.open)return;const target=event.target;if(target instanceof HTMLElement&&target.closest('input,textarea,select,[contenteditable=true]'))return;event.preventDefault();setFocusMode(event.key.toLowerCase()==='t'?'topology':event.key.toLowerCase()==='m'?'messages':'normal')});
-function updateTopologyModeUI(){const orbital=topologyMode==='orbital';$('topology-layout').value=topologyMode;$('topology-overview').hidden=!orbital;$('topology-system-label').hidden=!orbital;$('topology-system-label').textContent=orbital?`Solar system · #${orbitSystem} · ${topologyScope().agents.length} agents`:'';$('topology-orbit-toggle').hidden=!orbital;$('topology-orbit-toggle').setAttribute('aria-pressed',String(orbital&&!orbitPaused));$('topology-orbit-toggle').textContent=orbitPaused?'▶':'Ⅱ';$('topology-orbit-toggle').title=orbitPaused?'Animate orbits':'Pause orbital animation';$('topology-orbit-toggle').setAttribute('aria-label',$('topology-orbit-toggle').title);$('topology-mode-hint').textContent=orbital?'Drag to rotate · Shift-drag to pan · arrows rotate · double-click to focus':'Right-click a channel and select Show system · drag to pan · scroll to zoom'}
+function updateTopologyModeUI(){
+ $('topology-overview').hidden=!topologyProject;$('topology-system-label').hidden=!topologyProject;
+ $('topology-system-label').textContent=topologyProject?`Project · ${projects().find(p=>p.hash===topologyProject)?.name||topologyProject} · ${topologyScope().agents.length} agents`:'';
+ $('topology-mode-hint').textContent='Double-click a project to focus its linked agents and Kanban · drag to pan · scroll to zoom';
+}
 updateTopologyModeUI();
-$('topology-layout').addEventListener('change',event=>{if(event.target.value==='orbital'){const target=channels.find(c=>sameChannel(c.name,selectedChannel||orbitSystem));if(target)return showSystem(target.name);event.target.value=topologyMode;$('topology-mode-hint').textContent='Right-click a channel and select Show system first.';return}topologyMode=event.target.value;overviewMode=topologyMode;localStorage.setItem('mesh-topology-mode',topologyMode);updateTopologyModeUI();topologySignature='';topologyFit=true;renderTopology()});
-$('topology-overview').addEventListener('click',()=>{topologyMode=overviewMode;localStorage.setItem('mesh-topology-mode',topologyMode);topologyFit=true;topologySignature='';updateTopologyModeUI();renderTopology()});
-$('topology-orbit-toggle').addEventListener('click',()=>{orbitPaused=!orbitPaused;localStorage.setItem('mesh-orbit-paused',String(orbitPaused));updateTopologyModeUI()});
-setInterval(()=>{if(topologyMode!=='orbital'||!channels.some(c=>sameChannel(c.name,orbitSystem))||orbitPaused||topologyQuery||document.hidden||matchMedia('(prefers-reduced-motion: reduce)').matches||!$('topology-canvas').clientHeight)return;
- orbitYaw+=.018;renderTopology();
-},120);
+$('topology-overview').addEventListener('click',()=>showProject(''));
 $('topology-search').addEventListener('input',event=>{topologyQuery=event.target.value.trim().toLowerCase().slice(0,120);topologySignature='';renderTopology()});
-$('topology-canvas').addEventListener('keydown',event=>{if(topologyMode!=='orbital'||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();event.stopPropagation();if(event.key==='ArrowLeft')orbitYaw-=.16;if(event.key==='ArrowRight')orbitYaw+=.16;if(event.key==='ArrowUp')orbitTilt=Math.min(1,orbitTilt+.08);if(event.key==='ArrowDown')orbitTilt=Math.max(.2,orbitTilt-.08);topologySignature='';renderTopology()});
 $("topology-zoom-in").addEventListener("click",()=>zoomTopology(1.25));
 $("topology-zoom-out").addEventListener("click",()=>zoomTopology(.8));
 $("topology-fit").addEventListener("click",()=>{topologyFit=true;applyTopologyZoom()});
 new ResizeObserver(applyTopologyZoom).observe($("topology-canvas"));
 {const canvas=$('topology-canvas');let drag;
- canvas.addEventListener('pointerdown',event=>{if(event.button!==0||event.target.closest('button'))return;drag={x:event.clientX,y:event.clientY,left:canvas.scrollLeft,top:canvas.scrollTop,rotate:topologyMode==='orbital'&&!event.shiftKey};canvas.classList.add('graph-panning')});
- window.addEventListener('pointermove',event=>{if(!drag)return;if(drag.rotate){orbitYaw+=(event.clientX-drag.x)*.008;orbitTilt=Math.max(.2,Math.min(1,orbitTilt+(event.clientY-drag.y)*.004));drag.x=event.clientX;drag.y=event.clientY;topologySignature='';renderTopology()}else{topologyFit=false;topologyView?.pan(event.clientX-drag.x,event.clientY-drag.y);drag.x=event.clientX;drag.y=event.clientY;$('topology-fit').setAttribute('aria-pressed','false')}});
+ canvas.addEventListener('pointerdown',event=>{if(event.button!==0||event.target.closest('button'))return;drag={x:event.clientX,y:event.clientY};canvas.classList.add('graph-panning')});
+ window.addEventListener('pointermove',event=>{if(!drag)return;topologyFit=false;topologyView?.pan(event.clientX-drag.x,event.clientY-drag.y);drag.x=event.clientX;drag.y=event.clientY;$('topology-fit').setAttribute('aria-pressed','false')});
  for(const type of ['pointerup','pointercancel','blur'])window.addEventListener(type,()=>{drag=null;canvas.classList.remove('graph-panning')});
 }
 let nativeGesture=false,gestureScale=1;
@@ -332,7 +315,7 @@ void refresh();setInterval(()=>scheduleRefresh(0),1500);
  const steps=[
   ['.topbar','Welcome to Agent Mesh','This walkthrough shows how to monitor agents, read conversations and steer work. Use Next or Previous, or your left/right arrow keys. Exit returns you to your previous view.'],
   ['.topology-panel','Understand the topology','Channel and agent nodes show who is connected. Green means working, orange idle and grey offline. Solid links mark an active channel; dashed links mean joined only. Click a node after the tour to filter its conversation.',null,'explorer',true],
-  ['.topology-tools','Choose a topology layout','Spatial and structured layouts show all channels. Right-click a channel here or in Explorer and choose Show system for that channel alone: its sun and every joined agent planet, including inactive memberships. Use ← Overview to return. Drag to rotate, Shift-drag to pan, use arrow keys on the canvas to rotate, and scroll to zoom.',null,'explorer',true],
+  ['.topology-tools','Focus a project','One circular map shows projects, channels and agents. Double-click a project to show only its linked agents and open its Kanban board. Use All projects to return. Drag to pan and scroll to zoom.',null,'explorer',true],
   ['.topology-search','Focus on an agent or channel','Search names, projects, models or statuses. Matches are highlighted along with connected spheres; unrelated nodes fade. Clear search to restore the full graph.',null,'explorer',true],
   ['.channel-panel','Browse channels','Select a channel to open its conversation. Project/folder names identify shared project channels. The red × here closes the actual channel while keeping history and project files; the × on a conversation tab only closes that tab. The protected #user inbox is for user interventions and agent replies to you—not peer-to-peer coordination.',null,'explorer'],
   ['.participant-panel','Find and configure a participant','Click the Channels or Participants heading to fold or unfold that panel. Right-click an agent here or in the topology to open its configuration tab and request its exact Pi model and thinking level. The target Pi session applies the change when idle and reports an acknowledgment; an active approved child job cannot be reconfigured.',null,'explorer'],

@@ -15,7 +15,7 @@ async function wait(check){const end=Date.now()+3000;while(Date.now()<end){if(ch
 function setup(t,input={},legacy=false){
  const dir=mkdtempSync(join(tmpdir(),'mesh-completion-')),id=randomUUID(),run=join(dir,'runs',id);mkdirSync(run,{recursive:true});
  const profiles=loadProfiles(dir,dir),plan=compileWorkflow({isolation:'shared',untilComplete:true,maxCost:null,tasks:[{profile:'scout',task:'Finish request'}],...input},profiles,opts);
- if(legacy)delete plan.tokenLimitMode; // Already-approved historical grants used token checkpoints.
+ if(legacy){delete plan.tokenLimitMode;delete plan.failurePolicy;}  // Already-approved historical grants used token checkpoints.
  atomicJSON(join(run,'spec.json'),{id,plan,cwd:dir,project:dir,dataDirectory:dir,parentId:'fixture',systemPrompt:'test'});
  atomicJSON(join(run,'state.json'),{id,project:dir,state:'starting',heartbeat:Date.now(),steps:[],workspaces:[]});
  t.after(()=>rmSync(dir,{recursive:true,force:true}));return {dir,id,run};
@@ -76,8 +76,8 @@ test('runtime checkpoints resume the same retained session instead of cancelling
  const result=await supervise(run,{factory:async()=>child});assert.equal(result.state,'completed');assert.equal(count,2);assert.equal(aborts,1);
  assert.match(readFileSync(join(run,'events.jsonl'),'utf8'),/Runtime checkpoint/);
 });
-test('three failed acceptance passes pause for input rather than looping or failing terminally',async t=>{
- const {dir,id,run}=setup(t,{tasks:[{profile:'scout',task:'finish',acceptance:[{type:'json',equals:{verdict:'pass'}}]}]});let count=0;
+test('legacy grants pause after three acceptance failures and retain their approved continuation policy',async t=>{
+ const {dir,id,run}=setup(t,{tasks:[{profile:'scout',task:'finish',acceptance:[{type:'json',equals:{verdict:'pass'}}]}]},true);let count=0;
  const pending=supervise(run,{factory:async()=>session(JSON.stringify({verdict:++count<=3?'fail':'pass'}))});
  await wait(()=>readRun(dir,id).state==='paused');assert.equal(count,3);assert.match(readRun(dir,id).pauseReason,/acceptance failures/);
  enqueueControl(dir,id,'steer','Dependency is now available; retry');assert.equal((await pending).state,'completed');assert.equal(count,4);

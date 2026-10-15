@@ -82,6 +82,12 @@ export function resumeSpecification(directory,id,project) {
  if(previous.state==='interrupted'&&ownsLiveProcess(previous))throw new Error('Previous runner PID still exists; resolve its ownership before resuming');
  const spec=readJSON(join(runDirectory(directory,id),'spec.json'));
  if(spec.plan.schedule){const remaining=spec.plan.schedule.maxRuns-(previous.completedCycles||0);spec.plan.schedule=remaining>0?{...spec.plan.schedule,maxRuns:remaining,at:Math.max(Date.now(),Date.parse(previous.nextAt)||0)}:null}
+ if(spec.plan.failurePolicy==='escalate'){
+  const uncertain=previous.steps.find(s=>s.cleanupUnacknowledged||s.state!=='completed'&&/setup|cleanup|context settlement|context persistence|revoked|Token (?:usage|ceiling)/i.test(s.error||''));
+  if(uncertain)throw new Error(`Task ${uncertain.id} has uncertain setup/cleanup or authority; inspect retained evidence and start fresh approved work after resolving it`);
+  // A resume is a separately approved run, not authority to steal old card leases.
+  for(const task of spec.plan.stages.flatMap(s=>s.tasks))if(task.boardTaskId){task.previousBoardTaskId=task.boardTaskId;delete task.boardTaskId}
+ }
  spec.resumeOf=id;
  spec.resumeSessions=Object.fromEntries(previous.steps.filter(s=>s.sessionFile).map(s=>[s.id,s.sessionFile]));
  spec.resumeWorkspaces=previous.workspaces;

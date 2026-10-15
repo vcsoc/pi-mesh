@@ -3,6 +3,22 @@
 const order=(a,b)=>String(a.name||a.id).localeCompare(String(b.name||b.id))||String(a.id).localeCompare(String(b.id));
 export const projectIdentity=agent=>agent.projectHash||agent.cwd||`unassigned:${agent.id}`;
 export function channelIndex(channels){const index=new Map();for(const c of channels)index.set(c.name.toLowerCase(),c);for(const c of channels)for(const name of c.aliases||[])if(!index.has(name.toLowerCase()))index.set(name.toLowerCase(),c);return index;}
+export function circularProjectLayout(agents,channels){
+ const base=neighbourhoodLayout(agents,channels),positions=new Map(),groups=base.regions.map(r=>({...r,nodes:[...base.positions].filter(([,p])=>p.project===r.key).map(([id])=>id)}));
+ const radii=groups.map(g=>Math.max(380,Math.ceil(g.nodes.length/8)*160)),max=Math.max(380,...radii),radius=groups.length>1?(2*max+240)/(2*Math.sin(Math.PI/groups.length)):0;
+ groups.forEach((group,index)=>{
+  const angle=index*2*Math.PI/Math.max(1,groups.length)-Math.PI/2,cx=Math.cos(angle)*radius,cy=Math.sin(angle)*radius,hub=`project:${group.key}`;
+  positions.set(hub,{id:hub,x:cx,y:cy,project:group.key});
+  const members=group.nodes.filter(id=>id!==hub).sort((a,b)=>(a.startsWith('channel:')?0:1)-(b.startsWith('channel:')?0:1)||a.localeCompare(b));
+  let offset=0,ring=1;
+  while(offset<members.length){const capacity=ring*8,count=Math.min(capacity,members.length-offset),r=ring*230;
+   for(let slot=0;slot<count;slot++){const id=members[offset+slot],a=slot*2*Math.PI/count+ring*.23;positions.set(id,{id,x:cx+Math.cos(a)*r,y:cy+Math.sin(a)*r,project:group.key})}offset+=count;ring++;
+  }
+ });
+ const xs=[...positions.values()].map(p=>p.x),ys=[...positions.values()].map(p=>p.y),left=Math.min(0,...xs)-120,top=Math.min(0,...ys)-100;
+ for(const p of positions.values()){p.x-=left;p.y-=top}
+ return{positions,regions:groups.map(({nodes,...r})=>r),parentLinks:base.parentLinks,orbits:[],width:Math.max(240,...xs)-left+120,height:Math.max(240,...ys)-top+100};
+}
 function satellites(hub,members){const points=[{id:hub,x:0,y:0,z:0}];let ring=1,slot=0;for(const agent of members){let point;do{const capacity=ring*8,angle=slot*2*Math.PI/capacity;point={id:`agent:${agent.id}`,x:Math.cos(angle)*ring*230,y:Math.sin(angle)*ring*190,z:0};if(++slot===capacity){ring++;slot=0;}}while(points.some(p=>Math.abs(p.x-point.x)<160&&Math.abs(p.y-point.y)<76));points.push(point);}const minX=Math.min(...points.map(p=>p.x)),maxX=Math.max(...points.map(p=>p.x)),minY=Math.min(...points.map(p=>p.y)),maxY=Math.max(...points.map(p=>p.y));return{points:points.map(p=>({...p,x:p.x-minX+100,y:p.y-minY+100})),width:maxX-minX+200,height:maxY-minY+190};}
 export function neighbourhoodLayout(agents,channels){
  const positions=new Map(),groups=new Map(),parentLinks=[],index=channelIndex(channels),owners=new Map();

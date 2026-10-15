@@ -94,6 +94,8 @@ try:
     print('PASS: actual Pi Enter steering +Alt/Enter follow-up preserve stream/tool batch and drain in order; old→new /reload verified' if old_root else 'PASS: actual Pi Enter steering +Alt/Enter follow-up preserve stream/tool batch and drain in order; no provider inference')
 finally:
     release.set()
+    # Close our PTY before waiting: Darwin can otherwise retain an exiting session leader.
+    os.close(master)
     try: os.kill(pid, signal.SIGTERM)
     except ProcessLookupError: pass
     time.sleep(0.2)
@@ -106,5 +108,5 @@ finally:
         with urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=1) as response: health = json.load(response)
         if health.get('instance') == hashlib.sha256(cfg['token'].encode()).hexdigest()[:16]: os.kill(int(health['pid']), signal.SIGTERM)
     except (OSError, ValueError, KeyError): pass
-    os.close(master); server.shutdown(); server.server_close(); time.sleep(0.2)
+    server.shutdown(); server.server_close(); time.sleep(0.2)
     shutil.rmtree(home)

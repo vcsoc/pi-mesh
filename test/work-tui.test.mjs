@@ -67,10 +67,17 @@ const loader = createJiti(import.meta.url, {
 const { workPicker, reviewWork, editTeamRequest } = await loader.import(
   join(root, "work-tui.ts"),
 );
+const { editProjectConfig } = await loader.import(join(root,'config-tui.ts'));
 const { meshPanel } = await loader.import(join(root, "mesh-panel.ts"));
 const { simpleTeam, simpleProposal } = await loader.import(
   join(root, "simple-team.ts"),
 );
+test('inline project config Cancel/Save keeps native editor focus, rejects invalid JSON and requires deliberate Save',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'mesh-config-tui-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const a=screen();a.ctx.cwd=dir;const cancel=editProjectConfig(a.ctx);a.component.handleInput('dirty');a.component.handleInput('\x1b');assert.equal(await cancel,undefined);assert.equal(existsSync(join(dir,'.pi','mesh','config.json')),false);
+ const b=screen();b.ctx.cwd=dir;const save=editProjectConfig(b.ctx);assert.equal(b.component.focused,true);for(const width of [18,40,80])for(const line of b.component.render(width))assert(visibleWidth(line)<=width);b.component.handleInput('\t');assert.equal(b.component.focused,false);assert.match(b.component.render(80).join('\n'),/\[ Cancel \]/);b.component.handleInput('\t');b.component.handleInput('\r');assert.equal(await save,join(realpathSync(dir),'.pi','mesh','config.json'));assert.equal(JSON.parse(readFileSync(join(dir,'.pi','mesh','config.json'))).defaults.concurrency,'auto');
+ const c=screen();c.ctx.cwd=dir;const invalid=editProjectConfig(c.ctx);const before=readFileSync(join(dir,'.pi','mesh','config.json'),'utf8');c.component.handleInput('notjson');c.component.handleInput('\t');c.component.handleInput('\t');c.component.handleInput('\r');assert.equal(c.closed,false);assert.equal(readFileSync(join(dir,'.pi','mesh','config.json'),'utf8'),before);c.component.handleInput('\x1b');assert.equal(await invalid,undefined);
+});
 const theme = { fg: (_c, s) => s, style: (s, _options) => s };
 function screen(ctx = {}, activeTheme = theme) {
   let component, widget, customOptions, widgetOptions,

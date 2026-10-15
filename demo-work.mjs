@@ -3,8 +3,8 @@ import { compileWorkflow } from './workflow.mjs';
 import { plain } from './work-review.mjs';
 
 export const DEMO_MAX_AGENTS = 64;
-export const DEMO_CONCURRENCY = 4;
-export const DEMO_USAGE = `Usage: /mesh demo <agents> (1–${DEMO_MAX_AGENTS}; at most ${DEMO_CONCURRENCY} concurrent). Real model calls and normal Mesh logs; interactive approval required.`;
+export const DEMO_CONCURRENCY = DEMO_MAX_AGENTS;
+export const DEMO_USAGE = `Usage: /mesh demo <agents> (1–${DEMO_MAX_AGENTS}; all requested agents concurrently; 15-second deadline each). Real model calls and normal Mesh logs; interactive approval required. Provider delays become decision blockers, never false PASS.`;
 const roles = ['scout', 'reviewer', 'auditor'];
 const contract = 'Mesh smoke test only. Complete the assigned tiny in-memory task and return strict JSON only. Do not use tools, read or write project files, run shell commands, browse, install, delegate, change configuration, commit or push. Return results through your final task output; the Mesh supervisor collects and reports them. Then stop.';
 
@@ -31,17 +31,17 @@ export function demoCases(value) {
 
 export function demoWorkRequest(value) {
   const count = demoCount(value), cases = demoCases(count), stages = [];
-  for (let start = 0; start < count; start += 8) {
-    stages.push({ parallel: true, retries: 0, tasks: cases.slice(start, start + 8).map(item => ({
+  {
+    stages.push({ parallel: true, retries: 0, tasks: cases.map(item => ({
       id: item.id, profile: item.profile,
       task: `${contract}\n${item.task}\nReturn exactly one JSON object with task=${JSON.stringify(item.id)}, result, and status="done". No Markdown or extra text.`,
-      extensions: [], extensionTools: [],
+      dependsOn: [], extensions: [], extensionTools: [],
       acceptance: [{ type: 'json', required: ['task', 'result', 'status'], equals: { task: item.id, result: item.expected, status: 'done' }, types: { task: 'string', result: typeof item.expected, status: 'string' } }],
     })) });
   }
   return { action: 'run', background: true, definition: {
     scope: 'demo', demoCount: count, stages, isolation: 'shared', context: 'fresh',
-    concurrency: Math.min(DEMO_CONCURRENCY, count), timeoutMs: 60000,
+    concurrency: count, timeoutMs: 15000,
     maxCalls: count, maxTokens: null, maxCost: Math.max(1, count * .25),
     untilComplete: false, watchdog: false,
   } };
@@ -58,11 +58,12 @@ export function compileDemoWorkflow(definition, options) {
 }
 
 export function demoReport(run, spec) {
+  const deadlineMs=spec.plan.timeoutMs||15000,enforceElapsed=spec.plan.failurePolicy==='escalate';
   const cases = demoCases(spec.plan.demoCount), rows = new Map((run.steps || []).map(row => [row.id, row]));
   const results = cases.map(item => {
     const row = rows.get(item.id); let output;
     try { output = JSON.parse(row?.output); } catch { /* Missing/malformed output is not accepted. */ }
-    const passed = row?.state === 'completed' && row.acceptance?.length === 1 && row.acceptance[0].passed === true &&
+    const passed = row?.state === 'completed' && (!enforceElapsed || Number.isFinite(row.elapsedMs) && row.elapsedMs >= 0 && row.elapsedMs <= deadlineMs) && row.acceptance?.length === 1 && row.acceptance[0].passed === true &&
       output?.task === item.id && output?.status === 'done' && isDeepStrictEqual(output?.result, item.expected);
     return { item, row, output, passed: !!passed };
   });
@@ -73,6 +74,7 @@ export function demoReport(run, spec) {
     `Runtime: ${run.state}${run.error ? ` — ${run.error}` : ''}. Agents requested: ${cases.length}; started: ${(run.steps || []).length}; accepted: ${accepted}/${cases.length}.`,
     ...results.map(({ item, row, output, passed }) => `${item.id} · ${row?.name || row?.agentId || 'not registered'} (${item.profile}) · ${row?.state || 'not started'} · ${passed ? 'PASS' : 'FAIL'} · result=${JSON.stringify(output?.result)?.slice(0,240) ?? 'missing'}; expected=${JSON.stringify(item.expected)}`),
     'No workspace tools, child extensions or command gates. Normal model usage, Mesh/session logs and handoffs are retained; this is not an OS sandbox or a zero-cost dry run.',
-    `Inspect: /mesh jobs {"action":"inspect","id":"${run.id}"}. No automatic retries, continuation or history replay.`,
+    `Inspect: /mesh jobs {"action":"inspect","id":"${run.id}"}. Blocked work awaits an explicit decision; no automatic retries or history replay.`,
+    `Approved child deadline: ${deadlineMs/1000} seconds${enforceElapsed?' including setup':' runtime (legacy grant)'}. Provider latency is not guaranteed; deadline breaches cannot pass.`,
   ].join('\n'));
 }

@@ -8,6 +8,7 @@
   <title>Pi Agent Mesh</title>
   <link rel="stylesheet" href="/dashboard.css">
   <link rel="stylesheet" href="/management-workbench.css">
+  <link rel="stylesheet" href="/kanban.css">
   <script type="module" src="/management-workbench.js"></script>
 </head>
 <body>
@@ -31,7 +32,7 @@
   <div class="workspace">
     <aside class="topology-panel" aria-label="Membership topology">
       <header class="pane-heading"><b>Membership topology</b><button id="topology-toggle" aria-expanded="true" aria-controls="topology-body" title="Collapse topology">‹</button></header>
-      <div id="topology-body"><div class="topology-tools"><label class="sr-only" for="topology-layout">Topology layout</label><select id="topology-layout" aria-label="Topology layout"><option value="spatial">Projects &amp; channels</option><option value="structured">Structured</option><option value="orbital">Orbital</option></select><button id="topology-overview" type="button" title="Return to the channel overview" hidden>← Overview</button><button id="topology-orbit-toggle" type="button" title="Pause orbital animation" aria-label="Pause orbital animation" aria-pressed="true" hidden>Ⅱ</button><div role="group" aria-label="Topology zoom"><button id="topology-zoom-in" type="button" title="Zoom in" aria-label="Zoom in topology">+</button><button id="topology-fit" type="button" title="Fit all nodes" aria-pressed="true">Fit</button><button id="topology-zoom-out" type="button" title="Zoom out" aria-label="Zoom out topology">−</button></div></div><p id="topology-system-label" class="topology-system-label" hidden></p><label class="topology-search"><span class="sr-only">Search topology</span><input id="topology-search" type="search" placeholder="Find an agent or channel…" aria-label="Search topology and highlight connections" autocomplete="off"></label><p id="topology-mode-hint" class="topology-mode-hint">Drag empty space to pan · scroll to zoom</p><div id="topology-canvas" tabindex="0" aria-label="Channel and agent memberships. Drag to pan, scroll to zoom. In orbital view, arrow keys rotate the solar system."></div><div class="topology-legend"><span class="working">Working</span><span class="idle">Idle</span><span class="offline">Offline</span><span class="project-legend">Project hub</span><span class="channel-legend">Channel hub</span><span class="edge-legend">Solid link: active channel · dashed: joined only · blue: parent lineage</span></div></div>
+      <div id="topology-body"><div class="topology-tools"><b>Circular project map</b><button id="topology-overview" type="button" title="Show all projects" hidden>← All projects</button><div role="group" aria-label="Topology zoom"><button id="topology-zoom-in" type="button" title="Zoom in" aria-label="Zoom in topology">+</button><button id="topology-fit" type="button" title="Fit all nodes" aria-pressed="true">Fit</button><button id="topology-zoom-out" type="button" title="Zoom out" aria-label="Zoom out topology">−</button></div></div><p id="topology-system-label" class="topology-system-label" hidden></p><label class="topology-search"><span class="sr-only">Search topology</span><input id="topology-search" type="search" placeholder="Find an agent or channel…" aria-label="Search topology and highlight connections" autocomplete="off"></label><p id="topology-mode-hint" class="topology-mode-hint">Drag empty space to pan · scroll to zoom</p><div id="topology-canvas" tabindex="0" aria-label="Project and agent map. Double-click a project to show just that project. Drag to pan, scroll to zoom."></div><div class="topology-legend"><span class="working">Working</span><span class="idle">Idle</span><span class="offline">Offline</span><span class="project-legend">Project hub</span><span class="channel-legend">Channel hub</span><span class="edge-legend">Solid link: active channel · dashed: joined only · blue: parent lineage</span></div></div>
     </aside>
     <div id="topology-resizer" role="separator" tabindex="0" aria-label="Resize topology panel" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="700" aria-valuenow="340"></div>
     <aside class="context" id="explorer-panel">
@@ -48,6 +49,16 @@
 
     <main class="message-workspace">
       <div id="message-tabs" class="tabbar" role="tablist" aria-label="Workspace tabs"></div>
+      <section id="kanban-panel" class="kanban-panel" role="tabpanel" aria-label="Project Kanban">
+        <header class="kanban-heading"><h2>Project Kanban</h2><label>Project<select id="kanban-project"><option value="">Choose a project…</option></select></label></header>
+        <p class="muted">Refine Backlog → To Do. Approved agents claim tasks exclusively → In Progress → Testing → Done with evidence. Blocked tasks keep their lane; independent work continues. Board entries do not authorize execution.</p>
+        <output id="kanban-status" role="status" aria-live="polite"></output><div id="kanban-lanes" class="kanban-lanes"></div>
+        <section id="kanban-detail" class="kanban-detail" hidden><button id="kanban-task-close" type="button">Close task</button><h3 id="kanban-task-title"></h3><p id="kanban-task-meta" class="muted"></p><pre id="kanban-task-description"></pre><p id="kanban-blocker" class="kanban-blocker"></p><div id="kanban-comments" class="kanban-comments" aria-label="Task comments"></div>
+          <form id="kanban-comment-form"><label>Comment / decision<textarea id="kanban-comment" maxlength="12000" rows="3" required placeholder="Answer a question or steer this task within approved scope…"></textarea></label><button type="submit">Add comment</button></form>
+          <div class="kanban-actions"><button id="kanban-ready" type="button">Move to To Do</button><button id="kanban-answer" type="button">Record answer</button><button id="kanban-retry" type="button">Retry within grant</button><button id="kanban-escalate" type="button">Escalate to user</button></div>
+        </section>
+        <form id="kanban-create" class="kanban-create" hidden><h3>Add to Backlog</h3><label>Title<input id="kanban-new-title" maxlength="300" required></label><label>Description / acceptance criteria<textarea id="kanban-new-description" maxlength="12000" rows="2"></textarea></label><button type="submit">Create task</button></form>
+      </section>
       <section id="matrix-panel" class="matrix-panel" role="tabpanel" aria-label="Membership matrix" hidden></section>
       <section id="fleet-panel" class="fleet-panel" role="tabpanel" aria-label="Work fleet" hidden>
         <h2>Work fleet</h2><p>Approved detached workflows. Use /mesh jobs in Pi to launch, resume, merge or manage missions.</p>
@@ -144,6 +155,7 @@
   </dialog>
   <script type="module" src="/dashboard.js"></script>
   <script src="/fleet-panel.js" defer></script>
+  <script src="/kanban-panel.js" defer></script>
   <script src="/usage-panel.js" defer></script>
 </body>
 </html>

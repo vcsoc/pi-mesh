@@ -70,7 +70,7 @@ test('profile layers and ceilings, workflow validation and text-only fork contex
  writeFileSync(join(dir,'.pi','mesh','profiles.json'),JSON.stringify({scout:{prompt:'custom',tools:['read']}}));assert.equal(loadProfiles(dir,dir).scout.prompt,'custom');
  assert.throws(()=>plan(profiles,{tasks:[{profile:'scout',task:'x',model:'other/model'}]}),/unavailable/);
  assert.throws(()=>plan(profiles,{tasks:[{profile:'scout',task:'x'}],maxCalls:0}),/spawn budget/);
- assert.throws(()=>plan(profiles,{mode:'parallel',isolation:'shared',tasks:[{profile:'worker',task:'x'},{profile:'worker',task:'y'}]}),/Parallel writers/);
+ assert.equal(plan(profiles,{mode:'parallel',isolation:'shared',tasks:[{profile:'worker',task:'x'},{profile:'worker',task:'y'}]}).failurePolicy,'escalate');
  assert.throws(()=>plan(profiles,{schedule:{at:new Date().toISOString(),everyMs:2,maxRuns:2}}),/Schedule/);
  const text=forkContext([{type:'message',message:{role:'assistant',content:[{type:'thinking',thinking:'SECRET'},{type:'text',text:'public'}]}}]);assert.equal(text,'assistant: public');
  assert.equal(plan(profiles,{watchdog:true,tasks:[{profile:'worker',task:'edit'}]}).stages.length,2);
@@ -113,6 +113,7 @@ test('conditional stages skip without launching and bounded retries leave failur
  const workflow=plan(profiles,{stages:[{tasks:[{id:'first',profile:'scout',task:'x'}]},{when:{step:'first',field:'verdict',equals:'fail'},tasks:[{id:'second',profile:'scout',task:'y'}]}]});
  const {run}=prepare(dir,workflow);assert.equal((await supervise(run,{factory:fake()})).steps.length,1);
  const bad=prepare(dir,plan(profiles,{stages:[{tasks:[{profile:'scout',task:'bad',acceptance:[{type:'json',equals:{verdict:'pass'}}]}],retries:2}]}));
+ delete bad.spec.plan.failurePolicy;atomicJSON(join(bad.run,'spec.json'),bad.spec);
  const result=await supervise(bad.run,{factory:fake('not json')});assert.equal(result.state,'failed');assert.equal(result.steps.length,3);
 });
 test('controls have applied receipts; stop cancels active jobs',async t=>{
